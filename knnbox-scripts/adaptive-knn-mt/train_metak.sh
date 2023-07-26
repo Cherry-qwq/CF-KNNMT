@@ -17,7 +17,7 @@ DATASTORE_LOAD_PATH=$PROJECT_PATH/datastore/vanilla/it
 MAX_K=8
 
 # using paper's settings
-CUDA_VISIBLE_DEVICES=7 python $PROJECT_PATH/fairseq_cli/train.py $DATA_PATH \
+CUDA_VISIBLE_DEVICES=0 python $PROJECT_PATH/fairseq_cli/train.py $DATA_PATH \
 --task translation \
 --train-subset valid --valid-subset valid \
 --best-checkpoint-metric "loss" \
