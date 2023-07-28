@@ -7,3 +7,5 @@ from .pck_knn_mt import PckKNNMT
 from .plac_knn_mt import PlacKNNMT
 from .robust_knn_mt import RobustKNNMT, LabelSmoothedCrossEntropyCriterionForRobust
 from .simple_scalable_knn_mt import SimpleScalableKNNMT
+from .less_retrieve_knn_mt import LessRetrieveKNNMT
+from .vanilla_knn_mt_inspect_redundant import VanillaKNNMTInspectRedundant

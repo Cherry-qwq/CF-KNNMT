@@ -1,0 +1,78 @@
+{
+    "configurations": [
+        {
+            "name": "Vanilla-Inspect-Redundant",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/knnbox-scripts/common/generate.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "${workspaceFolder}/data-bin/it",
+                "--task", "translation",
+                "--path", "${workspaceFolder}/pretrain-models/wmt19.de-en/wmt19.de-en.ffn8192.pt",
+                "--dataset-impl", "mmap",
+                "--beam", "4",
+                "--lenpen", "0.6",
+                "--max-len-a", "1.2",
+                "--max-len-b", "10",
+                "--source-lang", "de", 
+                "--target-lang", "en", 
+                "--gen-subset", "test",
+                //"--model-overrides", "{'eval_bleu': False, 'required_seq_len_multiple':1, 'load_alignments': False}",
+                "--max-tokens", "2048", 
+                "--scoring", "sacrebleu", 
+                "--tokenizer", "moses",
+                "--remove-bpe",
+                "--user-dir", "${workspaceFolder}/knnbox/models",
+                "--arch", "vanilla_knn_mt_inspect_redundant@transformer_wmt19_de_en",
+                "--knn-mode", "inference", 
+                "--knn-datastore-path", "${workspaceFolder}/datastore/vanilla/it",
+               // "--knn-datastore-path", "${workspaceFolder}/datastore/less_retrieve/it",
+                "--knn-k", "8",
+                "--knn-lambda", "0.7",
+                "--knn-temperature", "10.0"
+            ],
+            "env": {
+                "OMP_WAIT_POLICY" : "PASSIVE"
+            }
+        },
+        {
+            "name": "LRKNNMT-Inference",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/knnbox-scripts/common/generate.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "${workspaceFolder}/data-bin/it",
+                "--task", "translation",
+                "--path", "${workspaceFolder}/pretrain-models/wmt19.de-en/wmt19.de-en.ffn8192.pt",
+                "--dataset-impl", "mmap",
+                "--beam", "4",
+                "--lenpen", "0.6",
+                "--max-len-a", "1.2",
+                "--max-len-b", "10",
+                "--source-lang", "de", 
+                "--target-lang", "en", 
+                "--gen-subset", "test",
+                //"--model-overrides", "{'eval_bleu': False, 'required_seq_len_multiple':1, 'load_alignments': False}",
+                "--max-tokens", "2048", 
+                "--scoring", "sacrebleu", 
+                "--tokenizer", "moses",
+                "--remove-bpe",
+                "--user-dir", "${workspaceFolder}/knnbox/models",
+                "--arch", "less_retrieve_knn_mt@transformer_wmt19_de_en",
+                "--knn-mode", "inference", 
+                "--knn-datastore-path", "${workspaceFolder}/datastore/vanilla/it",
+               // "--knn-datastore-path", "${workspaceFolder}/datastore/less_retrieve/it",
+                "--knn-k", "8",
+                "--knn-lambda", "0.7",
+                "--knn-temperature", "10.0"
+            ],
+            "env": {
+                "OMP_WAIT_POLICY" : "PASSIVE"
+            }
+        }
+    ]
+}
