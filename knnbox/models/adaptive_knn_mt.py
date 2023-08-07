@@ -65,6 +65,7 @@ class AdaptiveKNNMT(TransformerModel):
                             help="The directory to save/load adaptiveCombiner")
         parser.add_argument("--build-faiss-index-with-cpu", action="store_true", default=False,
                             help="use faiss-cpu instead of faiss-gpu (useful when gpu memory is small)") 
+        
     @classmethod
     def build_decoder(cls, args, tgt_dict, embed_tokens):
         r"""

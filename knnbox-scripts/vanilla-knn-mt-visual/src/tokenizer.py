@@ -24,7 +24,7 @@ def moses_de_tokenize(str):
     return _mosestokenize(str, "de")
 
 def moses_en_tokenize(str):
-   return _mosetokenize(str, "en")
+   return _mosestokenize(str, "en")
 
 # Regist your function here
 TOKENIZER_FUNCTIONS = {

@@ -87,13 +87,20 @@ def save_checkpoint(args, trainer, epoch_itr, val_loss):
     if len(checkpoints) > 0:
         ## knn-box related code start >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
         ## if we are training combiner, we only dump the combiner to disk
-        if hasattr(args, "knn_mode") and \
-                (args.knn_mode == "train_kster" or args.knn_mode == "train_metak"):
-            # if we got a new best checkpoint, save the combiner
-            if checkpoint_conds["checkpoint_best{}.pt".format(suffix)]:
-                assert hasattr(args, "knn_combiner_path"), "you must provide knn_combiner_path"
-                trainer.model.decoder.combiner.dump(args.knn_combiner_path)
-                logger.info("dumped combiner to {}".format(args.knn_combiner_path))
+        if hasattr(args, "knn_mode"):
+            if (args.knn_mode == "train_kster" or args.knn_mode == "train_metak"):
+                # if we got a new best checkpoint, save the combiner
+                if checkpoint_conds["checkpoint_best{}.pt".format(suffix)]:
+                    assert hasattr(args, "knn_combiner_path"), "you must provide knn_combiner_path"
+                    trainer.model.decoder.combiner.dump(args.knn_combiner_path)
+                    logger.info("dumped combiner to {}".format(args.knn_combiner_path))
+                
+            ### Add for LRKNNMT
+            if args.knn_mode == "train_less_retrieve":
+                assert hasattr(args, "whether_retrieve_selector_path"), "you muse set whter_retriev_selector_path"
+                trainer.model.decoder.whether_retrieve_selector.save(args.whether_retrieve_selector_path)
+                logger.info("Save retrieve selector to {}".format(args.whether_retrieve_selector_path))
+                            
         # <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< end
         else:
             trainer.save_checkpoint(checkpoints[0], extra_state)

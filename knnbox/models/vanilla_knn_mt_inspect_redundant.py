@@ -149,10 +149,10 @@ class VanillaKNNMTDecoder(TransformerDecoder):
             
             batch_size = knn_prob.shape[0]
             
-            redundant = (torch.argmax(torch.softmax(combined_prob,dim=-1),dim=-1) == torch.argmax(torch.softmax(net_output[0],dim=-1),dim=-1)).int().sum() 
+            redundant_label = (torch.argmax(torch.softmax(combined_prob,dim=-1),dim=-1) == torch.argmax(torch.softmax(net_output[0],dim=-1),dim=-1)).long()
             
             self.num_total_samples += batch_size
-            self.num_redundant += redundant
+            self.num_redundant += redundant_label.sum()
             
             print(f"Redundant ratio = {self.num_redundant / self.num_total_samples}")
             

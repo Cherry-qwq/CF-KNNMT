@@ -147,7 +147,7 @@ def build_faiss_index(
 
 
 def load_faiss_index(path, n_probe,
-            move_to_gpu=True, verbose=False):
+            move_to_gpu=True, verbose=False, enlaege_datastore=1):
     r"""
     load the faiss index"""
     print("[Start Loading Faiss Index]")

@@ -43,5 +43,5 @@ class Retriever:
         
         self.results = ret # save the retrieved results
         return ret
-    
+
         

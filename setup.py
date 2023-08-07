@@ -161,6 +161,7 @@ def do_setup(package_data):
             "sacrebleu>=1.4.12",
             "torch",
             "tqdm",
+            "lazy-property"
         ],
         dependency_links=dependency_links,
         packages=find_packages(

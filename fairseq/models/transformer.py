@@ -29,6 +29,8 @@ from fairseq.modules import (
 )
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 from torch import Tensor
+import inspect
+from lazy_property import LazyProperty
 
 
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
@@ -87,6 +89,8 @@ class TransformerModel(FairseqEncoderDecoderModel):
         super().__init__(encoder, decoder)
         self.args = args
         self.supports_align_args = True
+    
+    
 
     @staticmethod
     def add_args(parser):
@@ -244,6 +248,10 @@ class TransformerModel(FairseqEncoderDecoderModel):
             embed_tokens,
             no_encoder_attn=getattr(args, "no_cross_attention", False),
         )
+        
+    @LazyProperty
+    def __pass_target_to_decoder(self):
+        return 'target' in inspect.signature(self.decoder.forward).parameters
 
     # TorchScript doesn't support optional arguments with variable length (**kwargs).
     # Current workaround is to add union of all arguments in child classes.
@@ -256,6 +264,7 @@ class TransformerModel(FairseqEncoderDecoderModel):
         features_only: bool = False,
         alignment_layer: Optional[int] = None,
         alignment_heads: Optional[int] = None,
+        target = None
     ):
         """
         Run the forward pass for an encoder-decoder model.
@@ -265,15 +274,27 @@ class TransformerModel(FairseqEncoderDecoderModel):
         encoder_out = self.encoder(
             src_tokens, src_lengths=src_lengths, return_all_hiddens=return_all_hiddens
         )
-        decoder_out = self.decoder(
-            prev_output_tokens,
-            encoder_out=encoder_out,
-            features_only=features_only,
-            alignment_layer=alignment_layer,
-            alignment_heads=alignment_heads,
-            src_lengths=src_lengths,
-            return_all_hiddens=return_all_hiddens,
-        )
+        if self.__pass_target_to_decoder:
+            decoder_out = self.decoder(
+                prev_output_tokens,
+                encoder_out=encoder_out,
+                features_only=features_only,
+                alignment_layer=alignment_layer,
+                alignment_heads=alignment_heads,
+                src_lengths=src_lengths,
+                return_all_hiddens=return_all_hiddens,
+                target=target
+            )
+        else:
+            decoder_out = self.decoder(
+                prev_output_tokens,
+                encoder_out=encoder_out,
+                features_only=features_only,
+                alignment_layer=alignment_layer,
+                alignment_heads=alignment_heads,
+                src_lengths=src_lengths,
+                return_all_hiddens=return_all_hiddens,
+            )
         return decoder_out
 
     # Since get_normalized_probs is in the Fairseq Model which is not scriptable,

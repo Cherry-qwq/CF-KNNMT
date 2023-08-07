@@ -372,7 +372,11 @@ def _main(args, override_args, output_file):
             ),
             file=output_file,
         )
-
+        
+    for model in models:
+        if hasattr(model, "after_inference_hook"):
+            model.after_inference_hook()
+            
     return scorer
 
 

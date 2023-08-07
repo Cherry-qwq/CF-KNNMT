@@ -18,6 +18,7 @@ class FairseqCriterion(_Loss):
         if hasattr(task, "target_dictionary"):
             tgt_dict = task.target_dictionary
             self.padding_idx = tgt_dict.pad() if tgt_dict is not None else -100
+            self.eos_idx = tgt_dict.eos() if tgt_dict is not None else -100
 
     @classmethod
     def add_args(cls, parser):
