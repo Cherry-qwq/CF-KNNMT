@@ -11,9 +11,9 @@ export OMP_WAIT_POLICY=PASSIVE
 
 PROJECT_PATH=$( cd -- "$( dirname -- "$ BASH_SOURCE[0]}" )" &> /dev/null && pwd )/../..
 BASE_MODEL=$PROJECT_PATH/pretrain-models/wmt19.de-en/wmt19.de-en.ffn8192.pt
-DATA_PATH=$PROJECT_PATH/data-bin/it
-SAVE_DIR=$PROJECT_PATH/save-models/combiner/adaptive/it
-DATASTORE_LOAD_PATH=$PROJECT_PATH/datastore/vanilla/it
+DATA_PATH=$PROJECT_PATH/data-bin/koran
+SAVE_DIR=$PROJECT_PATH/save-models/combiner/adaptive/koran
+DATASTORE_LOAD_PATH=$PROJECT_PATH/datastore/vanilla/koran
 MAX_K=8
 
 # using paper's settings
