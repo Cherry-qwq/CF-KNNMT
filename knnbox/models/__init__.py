@@ -10,3 +10,4 @@ from .simple_scalable_knn_mt import SimpleScalableKNNMT
 from .less_retrieve_knn_mt import LessRetrieveKNNMT
 from .vanilla_knn_mt_inspect_redundant import VanillaKNNMTInspectRedundant
 from .lr_pck_knn_mt_inference import LRPckKNNMT
+from .lr_adaptive_knn_mt import LRAdaptiveKNNMT
