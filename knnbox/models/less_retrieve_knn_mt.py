@@ -26,6 +26,9 @@ from torch.autograd import Variable
 from .dice_loss import DiceLoss
 from knnbox.common_utils import Memmap, read_config, write_config
 from knnbox.datastore.utils import build_faiss_index, load_faiss_index 
+import logging
+from fairseq.logging.meters import StopwatchMeter
+from .vanilla_knn_mt import record_timer_start, record_timer_end
 
 import math
 
@@ -103,62 +106,6 @@ class GumbelSoftmaxLayer(nn.Module):
     
     def reset_for_retrain(self):
         self.current_epoch = 0
- 
-class FocalLoss(nn.Module):
-    r"""
-        This criterion is a implemenation of Focal Loss, which is proposed in 
-        Focal Loss for Dense Object Detection.
-            Loss(x, class) = - \alpha (1-softmax(x)[class])^gamma \log(softmax(x)[class])
-        The losses are averaged across observations for each minibatch.
-        Args:
-            alpha(1D Tensor, Variable) : the scalar factor for this criterion
-            gamma(float, double) : gamma > 0; reduces the relative loss for well-classiﬁed examples (p > .5), 
-                                   putting more focus on hard, misclassiﬁed examples
-            size_average(bool): By default, the losses are averaged over observations for each minibatch.
-                                However, if the field size_average is set to False, the losses are
-                                instead summed for each minibatch.
-    """
-    def __init__(self, class_num, alpha=None, gamma=2, size_average=True):
-        super(FocalLoss, self).__init__()
-        if alpha is None:
-            self.alpha = Variable(torch.ones(class_num, 1))
-        else:
-            if isinstance(alpha, Variable):
-                self.alpha = alpha
-            else:
-                self.alpha = Variable(alpha)
-        self.gamma = gamma
-        self.class_num = class_num
-        self.size_average = size_average
- 
-    def forward(self, inputs, targets):
-        N = inputs.size(0)
-        C = inputs.size(1)
-        P = F.softmax(inputs, dim=-1)
- 
-        class_mask = inputs.data.new(N, C).fill_(0)
-        class_mask = Variable(class_mask)
-        ids = targets.view(-1, 1)
-        class_mask.scatter_(1, ids.data, 1.)
-        #print(class_mask)
- 
- 
-        if inputs.is_cuda and not self.alpha.is_cuda:
-            self.alpha = self.alpha.cuda()
-        alpha = self.alpha[ids.data.view(-1)]
- 
-        probs = (P*class_mask).sum(1).view(-1,1)
- 
-        log_p = probs.log()
-
-        batch_loss = -alpha*(torch.pow((1-probs), self.gamma))*log_p  
-        if self.size_average:
-            loss = batch_loss.mean()
-        else:
-            loss = batch_loss.sum()
-        return loss
-
-        
 
 @register_criterion("less_retrieve_criterion")
 class LessRetrieveCriterion(FairseqCriterion):
@@ -198,8 +145,8 @@ class LessRetrieveCriterion(FairseqCriterion):
 
         pos_flag = (selector_label == 0)
         neg_flag = (selector_label == 1)
-        num_pos = pos_flag.int().sum()
-        num_neg = neg_flag.int().sum()
+        #num_pos = pos_flag.int().sum()
+        #num_neg = neg_flag.int().sum()
         
         #weight =  (num_neg + num_pos) / torch.tensor([num_pos, num_neg], dtype=torch.float, device=out.device)
         #weight /= weight.max()
@@ -226,17 +173,23 @@ class LessRetrieveCriterion(FairseqCriterion):
         num_pred_positive = (selector_pred_max == 0).int().sum()
         num_total_tokens = (selector_label).shape[0]
         
-        lprobs = model.get_normalized_probs((out,{}), log_probs=True)
-        lprobs = lprobs.view(-1, lprobs.size(-1))
-        target = model.get_targets(sample, (out,{})).view(-1)
-        loss_for_mt = F.nll_loss(
-            lprobs,
-            target,
-            ignore_index=self.padding_idx,
-            reduction="mean",
-        )
+        if extra["args"].use_mt_loss_for_selector:
+            
+            lprobs = model.get_normalized_probs((out,{}), log_probs=True)
+            lprobs = lprobs.view(-1, lprobs.size(-1))
+            target = model.get_targets(sample, (out,{})).view(-1)
+            loss_for_mt = F.nll_loss(
+                lprobs,
+                target,
+                ignore_index=self.padding_idx,
+                reduction="mean",
+            )
 
-        loss = self.weighted_loss(loss_for_cls, loss_for_mt)
+            loss = self.weighted_loss(loss_for_cls, loss_for_mt)
+            
+        else:
+            
+            loss = loss_for_cls
         
         logging_output = {
             "loss": loss,
@@ -254,7 +207,9 @@ class LessRetrieveCriterion(FairseqCriterion):
         return loss, sample_size, logging_output
     
     def weighted_loss(self, loss_for_cls, loss_for_mt):
-        return loss_for_cls + loss_for_mt
+        # Eq. 7
+        # Due to reduce = 'mean', here we can directly add these two loss, no need for division by N
+        return loss_for_cls + loss_for_mt 
     
     @staticmethod
     def reduce_metrics(logging_outputs) -> None:
@@ -345,7 +300,7 @@ class LessRetrieveKNNMT(TransformerModel):
         add knn-mt related args here
         """
         TransformerModel.add_args(parser)
-        parser.add_argument("--knn-mode", choices= ["build_datastore", "build_prior_prob", "inference", "train_less_retrieve"],
+        parser.add_argument("--knn-mode", choices= ["build_datastore", "test_metrics", "inference", "train_less_retrieve"],
                             help="choose the action mode")
         parser.add_argument("--knn-datastore-path", type=str, metavar="STR",
                             help="the directory of save or load datastore")
@@ -358,12 +313,10 @@ class LessRetrieveKNNMT(TransformerModel):
         parser.add_argument("--build-faiss-index-with-cpu", action="store_true", default=False,
                             help="use faiss-cpu instead of faiss-gpu (useful when gpu memory is small)")
         parser.add_argument("--whether_retrieve_selector_path", help="Path to save/load the selector checkpoint", required=True)
-        #parser.add_argument("--prior_prob_path", help="Path to prior probability data file", required=True)
-        parser.add_argument("--use_mt_loss_for_selector", help="Whether to use matchine translation loss to optimize selector", default=True)
+        parser.add_argument("--use_mt_loss_for_selector", help="Whether to use matchine translation loss to optimize selector", 
+                            default=True, type=lambda x : x in ['y', "Y", "Yes", "T", "True"])
         parser.add_argument("--gumbel_max_tau", help="When use_mt_loss_for_selector is on, set max tau hyper-parameter for gumbel softmax", default=0.1)
         parser.add_argument("--gumbel_min_tau", help="When use_mt_loss_for_selector is on, set min tau hyper-parameter for gumbel softmax", default=0.1)
-        parser.add_argument("--replicate_datastore", default=1)
-        #parser.add_argument("--"
     
     @classmethod
     def build_decoder(cls, args, tgt_dict, embed_tokens):
@@ -399,7 +352,7 @@ class LessRetrieveKNNMTDecoder(TransformerDecoder):
         In other words, create datastore, retriever and combiner.
         """
         super().__init__(args, dictionary, embed_tokens, no_encoder_attn)
-
+        selector_impl = LessRetrieveSelectorSimple
         if args.knn_mode == "build_datastore":
             if "datastore" not in global_vars():
                 # regist the datastore as a global variable if not exist,
@@ -407,15 +360,20 @@ class LessRetrieveKNNMTDecoder(TransformerDecoder):
                 # python file (when traverse the dataset and `add value`)
                 global_vars()["datastore"] = Datastore(args.knn_datastore_path)  
             self.datastore = global_vars()["datastore"]
-        elif args.knn_mode == 'build_prior_prob':
+        elif args.knn_mode == 'test_metrics':
             self.datastore = Datastore.load(args.knn_datastore_path, load_list=["vals"])
             self.datastore.load_faiss_index("keys")
             self.combiner = Combiner(lambda_=args.knn_lambda,
                         temperature=args.knn_temperature, probability_dim=len(dictionary))
             self.retriever = Retriever(datastore=self.datastore, k=args.knn_k)
-            self.whether_retrieve_selector = LessRetrieveSelectorSimple(1,1)  # Just define it to avoid error, but not use when build_prior_prob
-            self.prior_prob = nn.Parameter(torch.zeros(embed_tokens.weight.shape[0], dtype=torch.float), requires_grad=False)
+            self.whether_retrieve_selector = selector_impl.load(args.whether_retrieve_selector_path)
             self.token_meet_cnt = nn.Parameter(torch.zeros(embed_tokens.weight.shape[0], dtype=torch.float), requires_grad=False)
+            self.tp = 0
+            self.fp = 0
+            self.tn = 0
+            self.fn = 0
+            self.num_predict_retrieve = 0
+            self.num_total_tokens = 0
         else:
             if args.knn_mode in ["train_less_retrieve", "inference"]:
                 self.datastore = Datastore.load(args.knn_datastore_path, load_list=["vals"])
@@ -424,14 +382,16 @@ class LessRetrieveKNNMTDecoder(TransformerDecoder):
                         temperature=args.knn_temperature, probability_dim=len(dictionary))
                 self.retriever = Retriever(datastore=self.datastore, k=args.knn_k)
                 self.gumbel = GumbelSoftmaxLayer(args.max_epoch, init_tau=args.gumbel_max_tau, min_tau=args.gumbel_min_tau)
-                
-                selector_impl = LessRetrieveSelectorSimple
+            
                 if args.knn_mode == "inference":
                     self.whether_retrieve_selector = selector_impl.load(args.whether_retrieve_selector_path)
-                   # self.prior_prob = torch.load(args.prior_prob_path)
+                    
                 else:
                     #self.whether_retrieve_selector = LessRetrieveSelector(self.output_projection.in_features + embed_tokens.weight.shape[0], 2048)
                     self.whether_retrieve_selector = selector_impl(self.output_projection.in_features, self.output_projection.in_features)
+                    if not args.use_mt_loss_for_selector:
+                        logging.info("Do not use translation loss")  
+        self.retrieve_timer = StopwatchMeter()   
                    
     def forward(
         self,
@@ -496,29 +456,59 @@ class LessRetrieveKNNMTDecoder(TransformerDecoder):
             return x, extra, {"selector_label" : selector_label, "selector_pred" : selector_pred_prob}
         elif self.args.knn_mode =='inference':
             # Decide whether to retrieve
-            selector_pred_prob = self.whether_retrieve_selector(z)
-            self.selector_pred = (torch.softmax(selector_pred_prob, dim=-1).argmax(dim=-1) == 0)
+            #record_timer_start(self.retrieve_timer)
             
-            # prior_prob_decision_donot_retrieve = (torch.rand(size=self.prior_prob.shape, device=self.prior_prob.device) > self.prior_prob) 
+            # Let the selector predict for each token
+            selector_pred_prob = self.whether_retrieve_selector(z)   
+            self.selector_pred = (torch.softmax(selector_pred_prob, dim=-1).argmax(dim=-1) == 0)  # Eq. 8
+       
+            # select probabilities that requires retrievals
             B, T, H = z.shape
+            selected_features = z.reshape(B*T,H)[self.selector_pred.view(B*T)].view(-1,H).unsqueeze(1)  
+            
+            # Retrievel only for partial tokens.
+            self.retriever.retrieve(selected_features, return_list=["vals", "distances"])
+            #record_timer_end(self.retrieve_timer)
+            return x, extra, {}
+        elif self.args.knn_mode == 'test_metrics':
+            #self.retriever.retrieve(z, return_list=["vals", "distances"])
+           # knn_prob = self.combiner.get_knn_prob(**self.retriever.results, device=x.device)
+           # combined_prob, _ = self.combiner.get_combined_prob(knn_prob, x, log_probs=True)  #log_probs is True
+            
+            # net_pred = torch.argmax(torch.softmax(x, dim=-1),dim=-1)
+            # net_correct = (net_pred == target).int()
+            
+            selector_pred_prob = self.whether_retrieve_selector(z)
+            
+            selector_pred = (torch.softmax(selector_pred_prob, dim=-1)).argmax(dim=-1)
+            selector_label = (torch.argmax(torch.softmax(x, dim=-1), dim=-1) == target).long()
+
+            pos_flag = (selector_label.view(-1) == 0)
+            neg_flag = (selector_label.view(-1) == 1)
+            pred_pos = (selector_pred.view(-1) == 0)
+            pred_neg = (selector_pred.view(-1) == 1)
+            tp = torch.logical_and(pred_pos, pos_flag).int().sum().item()
+            fp = torch.logical_and(pred_pos, neg_flag).int().sum().item()
+            tn = torch.logical_and(pred_neg, neg_flag).int().sum().item()
+            fn = torch.logical_and(pred_neg, pos_flag).int().sum().item()
+            self.tp += tp 
+            self.fp += fp 
+            self.tn += tn 
+            self.fn += fn
+            
+            self.selector_pred = (selector_pred == 0)
+            
+            self.num_predict_retrieve += (self.selector_pred).int().sum().item()
+            
+            B, T, H = z.shape
+            
+            self.num_total_tokens += B * T
             
             selected_features = z.reshape(B*T,H)[self.selector_pred.view(B*T)].view(-1,H).unsqueeze(1)
             
             self.retriever.retrieve(selected_features, return_list=["vals", "distances"])
             return x, extra, {}
-        elif self.args.knn_mode == 'build_prior_prob':
-            self.retriever.retrieve(z, return_list=["vals", "distances"])
-           # knn_prob = self.combiner.get_knn_prob(**self.retriever.results, device=x.device)
-           # combined_prob, _ = self.combiner.get_combined_prob(knn_prob, x, log_probs=True)  #log_probs is True
-            
-            net_pred = torch.argmax(torch.softmax(x, dim=-1),dim=-1)
-            net_correct = (net_pred == target).view(-1)
-            
-            self.token_meet_cnt[net_pred.view(-1)] += 1
-            self.prior_prob[net_pred.view(-1)] += (net_correct.view(-1).int())
-            
-            return x, extra, {}
-    
+                
 
     def get_normalized_probs(
         self,
@@ -533,36 +523,48 @@ class LessRetrieveKNNMTDecoder(TransformerDecoder):
         step 2.
             combine the knn probability with NMT's probability 
         """
-        if self.args.knn_mode == "inference" or self.args.knn_mode == 'train_less_retrieve':
+        if self.args.knn_mode == "inference" or self.args.knn_mode == 'train_less_retrieve' or self.args.knn_mode == "test_metrics":
             if self.retriever.results['distances'].shape[0] > 0:
+                
+                # Combine probability as Eq. 2 and Eq. 5
+                #self.retrieve_timer.start()
                 B, T, V = net_output[0].shape
-                knn_prob = self.combiner.get_knn_prob(**self.retriever.results, device=net_output[0].device)
+                knn_prob = self.combiner.get_knn_prob(**self.retriever.results, device=net_output[0].device)  # Eq. 1
                     
                 if self.args.knn_mode == 'train_less_retrieve' and self.args.use_mt_loss_for_selector:
                     selected_net_prob = torch.mul(self.selector_gumbel_prob[self.selector_pred][:,0].unsqueeze_(1), net_output[0][self.selector_pred]).unsqueeze_(1)
-                else:
+                else:  # Gumbel softmax is disable when infernece or mt_loss_for_selector is turned off.
                     selected_net_prob = net_output[0][self.selector_pred].unsqueeze_(1)
                     
-                combined_prob, _ = self.combiner.get_combined_prob(knn_prob, selected_net_prob, log_probs=True)
-                final_prob = torch.clone(net_output[0]).reshape(B*T,-1)
-       
+                combined_prob, _ = self.combiner.get_combined_prob(knn_prob, selected_net_prob, log_probs=True)  # Eq. 2
+                final_prob = torch.clone(net_output[0]).reshape(B*T,-1) 
+
+                # Eq. 5
                 final_prob[self.selector_pred.view(B*T)] = combined_prob.view(-1, V)
                 final_prob = final_prob.view(B, T, -1)
+                
+                # Keep the probability in log-space
                 if log_probs:
-                    return torch.log_softmax(final_prob, dim=-1)
+                    res = torch.log_softmax(final_prob, dim=-1)
                 else:
-                    return torch.softmax(final_prob, dim=-1)
+                    res = torch.softmax(final_prob, dim=-1)
+                #self.retrieve_timer.stop()
+                return res
             else:
+                #self.retrieve_timer.start()
                 knn_prob = self.combiner.get_knn_prob(**self.retriever.results, device=net_output[0].device)
                 #combined_prob, _ = self.combiner.get_combined_prob(knn_prob, net_output[0], log_probs=log_probs)
                 if knn_prob.shape[0] > 0:
                     combined_prob, _ = self.combiner.get_combined_prob(knn_prob, net_output[0], log_probs=log_probs)
+                    self.retrieve_timer.stop()
                     return combined_prob
                 else:
                     if log_probs:
-                        return F.log_softmax(net_output[0], dim=-1)
+                        res = F.log_softmax(net_output[0], dim=-1)
                     else:
-                        return torch.softmax(net_output[0], dim=-1)
+                        res = torch.softmax(net_output[0], dim=-1)
+                    #self.retrieve_timer.stop()
+                    return res
         else:
             return super().get_normalized_probs(net_output, log_probs, sample)
         
@@ -571,16 +573,39 @@ class LessRetrieveKNNMTDecoder(TransformerDecoder):
         return self.whether_retrieve_selector.parameters(recurse=True)
     
     def after_inference_hook(self):
-        pass        
+        if self.retrieve_timer.start_time is None:
+            print("KNN overhead time is not recoreded")
+        else:
+            print(f"KNN overhead time = {self.retrieve_timer.sum}s")
     
     def after_train_hook(self):
-        if self.args.knn_mode == 'build_prior_prob':
-            self.prior_prob /= self.token_meet_cnt
-            self.prior_prob[torch.isnan(self.prior_prob)] = 1  # For unseen token, do not retrieve.
-            os.makedirs(os.path.dirname(self.args.prior_prob_path), mode=0o755, exist_ok=True)
-            torch.save(self.prior_prob, self.args.prior_prob_path)
-        
-        
+        if self.args.knn_mode == 'test_metrics':
+            tp = self.tp 
+            fp = self.fp 
+            tn = self.tn 
+            fn = self.fn 
+            if (tp + fp + tn + fn) != 0:
+                accuracy = (tp + tn) / (tp + fp + tn + fn)
+            else:
+                accuracy = 0
+                
+            if tp + fp != 0:
+                precision = tp / (tp + fp)
+            else:
+                precision = 0
+
+            if tp + fn != 0:
+                recall = tp / (tp + fn)
+            else:
+                recall = 0 
+            
+            if precision + recall != 0:
+                f1 = 2 * precision * recall / (precision + recall)
+            else:
+                f1 = 0
+                
+            retrieving_ratio = self.num_predict_retrieve / self.num_total_tokens
+            print(f"Test Metrics -- Acc : {accuracy}, P : {precision}, R : {recall}, F1 : {f1}, Retrieving Ratio = {retrieving_ratio}")
 
 
 r""" Define some vanilla knn-mt's arch.

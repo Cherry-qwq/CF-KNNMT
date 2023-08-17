@@ -11,9 +11,9 @@ export OMP_WAIT_POLICY=PASSIVE
 
 PROJECT_PATH=$( cd -- "$( dirname -- "$ BASH_SOURCE[0]}" )" &> /dev/null && pwd )/../..
 BASE_MODEL=$PROJECT_PATH/pretrain-models/wmt19.de-en/wmt19.de-en.ffn8192.pt
-DATA_PATH=$PROJECT_PATH/data-bin/it
-SAVE_DIR=$PROJECT_PATH/save-models/combiner/pck/it_dim64
-DATASTORE_LOAD_PATH=$PROJECT_PATH/datastore/pck/it_dim64
+DATA_PATH=$PROJECT_PATH/data-bin/medical
+SAVE_DIR=$PROJECT_PATH/save-models/combiner/pck/medical_dim64
+DATASTORE_LOAD_PATH=$PROJECT_PATH/datastore/pck/medical_dim64
 MAX_K=4
 
 

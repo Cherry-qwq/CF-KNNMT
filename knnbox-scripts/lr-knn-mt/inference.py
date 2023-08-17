@@ -15,7 +15,7 @@ DEFAULT_DATASTORE_PATH = {
     ("vanilla", "law") : f"{PROJECT_PATH}/datastore/vanilla/law",
     ("vanilla", "medical") : f"{PROJECT_PATH}/datastore/vanilla/medical",
     ("adaptive", "it") : f"{PROJECT_PATH}/datastore/vanilla/it",
-    ("adaptive", "medical") : f"{PROJECT_PATH}/datastore/vanilla/koran",
+    ("adaptive", "koran") : f"{PROJECT_PATH}/datastore/vanilla/koran",
     ("adaptive", "law") : f"{PROJECT_PATH}/datastore/vanilla/law",
     ("adaptive", "medical") : f"{PROJECT_PATH}/datastore/vanilla/medical",
     ("pck", "it") : f"{PROJECT_PATH}/datastore/pck/it_dim64",
@@ -75,6 +75,9 @@ def add_common_arguments(parser : argparse.ArgumentParser):
     parser.add_argument("--model", required=True, choices=['base', 'vanilla', 'adaptive', 'pck', 'lr', 'lr_adaptive', 'lr_pck'])
     parser.add_argument("--dataset", required=True, choices=['it', 'koran', 'law', 'medical'])
     parser.add_argument("--single-gpu-index", default=0)
+    parser.add_argument("--run-3-time", default=False, action='store_true')
+    parser.add_argument("--no-translation-loss", default=False, action='store_true')
+    parser.add_argument("--test-knn-overhead", default=False, action='store_true')
 
 
 if __name__ == "__main__":
@@ -134,11 +137,16 @@ if __name__ == "__main__":
         
         if "lr" in args.model:
             cmd.append("--whether_retrieve_selector_path")
-            cmd.append(pjdir(f"save-models/LRKNNMT/{args.dataset}/selector.pt"))
+            #cmd.append(pjdir(f"save-models/LRKNNMT/{args.dataset}/selector.pt"))
+            cmd.append(pjdir(f"save-models/LRKNNMT/{args.dataset}/selector.pt") if not args.no_translation_loss else pjdir(f"save-models/LRKNNMT/{args.dataset}/selector_no_translation_loss.pt"))         
             
         if "adaptive" in args.model:
             cmd.append("--knn-combiner-path")
             cmd.append(pjdir(f"save-models/combiner/adaptive/{args.dataset}"))
+        
+        if 'pck' in args.model:
+            cmd.append("--knn-combiner-path")
+            cmd.append(pjdir(f"save-models/combiner/pck/{args.dataset}_dim64"))
             
         # about knn k
         if not "adaptive" in args.model:
@@ -152,30 +160,88 @@ if __name__ == "__main__":
                 cmd.append("fixed")
         else:
             cmd.append("--knn-max-k")
+            cmd.append("8")
             cmd.append("--knn-temperature-type")
             cmd.append("fixed")
-            cmd.append("8")
         
         script = [sys.executable, pjdir("knnbox-scripts/common/generate.py")]
         script.extend(cmd)
     
     print(' '.join(script))    
     
-    p = subprocess.Popen(script, env=get_base_env(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = p.communicate()
-    p.wait()
-    if p.returncode != 0:
-        print(f"Error:\n {err.decode()}")
-        exit(p.returncode)
+    
+    if not args.run_3_time:
+        p = subprocess.Popen(script, env=get_base_env(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = p.communicate()
+        p.wait()
+        if p.returncode != 0:
+            print(f"Error:\n {err.decode()}")
+            exit(p.returncode)
+        else:
+            speed_info = err.decode().split("|")[-1].strip()
+            print(speed_info)
+            bleu_info = out.decode().split("Generate test with")[-1].strip()
+            print(bleu_info)
+
+            inference_results_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "inference_results")
+            os.makedirs(inference_results_path, mode=0o755, exist_ok=True)
+            with open(f"{inference_results_path}/{args.model}-{args.dataset}-{datetime.now()}.txt", "w") as f:
+                f.write(f"{speed_info}\n{bleu_info}")
+                
+                if args.no_translation_loss:
+                    f.write("\nNote: The selector was trained without translation loss.")
+            
+            exit(0)
     else:
-        speed_info = err.decode().split("|")[-1].strip()
-        print(speed_info)
-        bleu_info = out.decode().split("Generate test with")[-1].strip()
-        print(bleu_info)
+        bleu = None
+        times = []
+        tps = []
+        knn_time = []
+        for li in range(3):
+            p = subprocess.Popen(script, env=get_base_env(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            out, err = p.communicate()
+            p.wait()
+            
+            if p.returncode != 0:
+                print(f"Error:\n {err.decode()}")
+                exit(p.returncode)
+            else:
+                out_info = out.decode()
+                
+                if bleu is None:
+                    #import pdb
+                    #pdb.set_trace()
+                    bleu_info = out_info.split("\n")[-3].split("Generate test with")[-1].strip()
+                   # bleu = float(re.match(r"BLEU = ([\d\.]+)", bleu_info)[1])
+                    bleu = float(bleu_info.split(":")[1].split(' ')[3])
+                    print(f"BLEU = {bleu}")
+                    
+                if args.test_knn_overhead:
+                    knn_retrieve_info = out_info.split("\n")[-2]
+                    knn_time.append( float(knn_retrieve_info.split('=')[-1].strip().split('s')[0]) )                
+            
+                speed_info = err.decode().split("|")[-1].strip()
+                #print(speed_info)
+                times.append(float(speed_info.split('in')[1].split(' ')[1].split('s')[0]))
+                tps.append(float(speed_info.split("/s")[-2].split(' ')[-2]))
+                if args.test_knn_overhead:
+                    print(f"Run #{li+1}, inference time = {times[-1]}, {tps[-1]} tokens/s, KNN overhead = {knn_time[-1]}s")
+                else:
+                    print(f"Run #{li+1}, inference time = {times[-1]}, {tps[-1]} tokens/s")
+                
+                
 
         inference_results_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "inference_results")
         os.makedirs(inference_results_path, mode=0o755, exist_ok=True)
         with open(f"{inference_results_path}/{args.model}-{args.dataset}-{datetime.now()}.txt", "w") as f:
-            f.write(f"{speed_info}\n{bleu_info}")
+            f.write(f"BLEU = {bleu}\nEach inference time in seconds = {' '.join(list(map(str,times)))}\nAverage inference time = {sum(times)/len(times)}s")
+            f.write(f"\nEach inference speed(tokens/s) = {' '.join(list(map(str, tps)))}\nAverage inference speed = {sum(tps)/len(tps)} tokens/s")
+            
+            if args.test_knn_overhead:
+                f.write(f"\nEach KNN retrieving time = {' '.join(list(map(str, knn_time)))}\nAverage KNN retrieving time = {sum(knn_time)/len(knn_time)}s")
+            
+        
         
         exit(0)
+
+            

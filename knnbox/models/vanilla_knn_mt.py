@@ -16,6 +16,18 @@ from knnbox.datastore import Datastore
 from knnbox.retriever import Retriever
 from knnbox.combiner import Combiner
 
+### Added for measuring KNN time
+from fairseq.logging.meters import StopwatchMeter
+import torch
+
+def record_timer_start(t : StopwatchMeter):
+    torch.cuda.synchronize()  # Synchronize to ensure precision.
+    t.start()
+    
+def record_timer_end(t : StopwatchMeter):
+    torch.cuda.synchronize()  # Synchronize to ensure precision.
+    t.stop()
+
 
 @register_model("vanilla_knn_mt")
 class VanillaKNNMT(TransformerModel):
@@ -54,6 +66,10 @@ class VanillaKNNMT(TransformerModel):
         )
 
 
+    def after_inference_hook(self):
+        if hasattr(self.decoder, "after_inference_hook"):
+            self.decoder.after_inference_hook()
+
 class VanillaKNNMTDecoder(TransformerDecoder):
     r"""
     The vanilla knn-mt Decoder, equipped with knn datastore, retriever and combiner.
@@ -81,6 +97,8 @@ class VanillaKNNMTDecoder(TransformerDecoder):
             self.retriever = Retriever(datastore=self.datastore, k=args.knn_k)
             self.combiner = Combiner(lambda_=args.knn_lambda,
                      temperature=args.knn_temperature, probability_dim=len(dictionary))
+            
+            self.retrieve_timer = StopwatchMeter()
 
     def forward(
         self,
@@ -117,7 +135,9 @@ class VanillaKNNMTDecoder(TransformerDecoder):
         elif self.args.knn_mode == "inference":
             ## query with x (x needn't to be half precision), 
             ## save retrieved `vals` and `distances`
+            #record_timer_start(self.retrieve_timer)
             self.retriever.retrieve(x, return_list=["vals", "distances"])
+            #record_timer_end(self.retrieve_timer)
         
         if not features_only:
             x = self.output_layer(x)
@@ -138,11 +158,19 @@ class VanillaKNNMTDecoder(TransformerDecoder):
             combine the knn probability with NMT's probability 
         """
         if self.args.knn_mode == "inference":
+            #record_timer_start(self.retrieve_timer)
             knn_prob = self.combiner.get_knn_prob(**self.retriever.results, device=net_output[0].device)
             combined_prob, _ = self.combiner.get_combined_prob(knn_prob, net_output[0], log_probs=log_probs)
+            #record_timer_end(self.retrieve_timer)
             return combined_prob
         else:
             return super().get_normalized_probs(net_output, log_probs, sample)
+        
+    def after_inference_hook(self):
+        if self.retrieve_timer.start_time is None:
+            print("KNN overhead time is not recoreded")
+        else:
+            print(f"KNN overhead time = {self.retrieve_timer.sum}s")
 
 
 r""" Define some vanilla knn-mt's arch.

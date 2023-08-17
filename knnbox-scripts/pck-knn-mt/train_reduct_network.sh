@@ -8,14 +8,14 @@
 export OMP_WAIT_POLICY=PASSIVE
 PROJECT_PATH=$( cd -- "$( dirname -- "$ BASH_SOURCE[0]}" )" &> /dev/null && pwd )/../..
 
-DATASTORE_LOAD_PATH=$PROJECT_PATH/datastore/pck/it  # the train set is constructed from datastore
+DATASTORE_LOAD_PATH=$PROJECT_PATH/datastore/pck/medical  # the train set is constructed from datastore
 LOG_PATH=$DATASTORE_LOAD_PATH/train_log
 REDUCT_DIM=64
 DR_LOSS_RATIO=0.0
 NCE_LOSS_RATIO=1.0
 WP_LOSS_RATIO=0.0
 BATCH_SIZE=1024
-MAX_UPDATE=100000   # Koran: 50000 IT: 100000 Medical: 150000 Law: 300000
+MAX_UPDATE=150000   # Koran: 50000 IT: 100000 Medical: 150000 Law: 300000
 
 CUDA_VISIBLE_DEVICES=0 python $PROJECT_PATH/knnbox-scripts/pck-knn-mt/train_reduct_network.py \
 --datastore-load-path $DATASTORE_LOAD_PATH \

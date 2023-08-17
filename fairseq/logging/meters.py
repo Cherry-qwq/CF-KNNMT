@@ -185,7 +185,7 @@ class StopwatchMeter(Meter):
     def reset(self):
         self.sum = 0  # cumulative time during which stopwatch was active
         self.n = 0  # total n across all start/stop
-        self.start()
+        self.start()     
 
     def state_dict(self):
         return {

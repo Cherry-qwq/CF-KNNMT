@@ -17,6 +17,7 @@ from knnbox.retriever import Retriever
 from knnbox.combiner import Combiner
 
 import torch
+import numpy as np
 
 MODEL_NAME = "vanilla_knn_mt_inspect_redundant"
 
@@ -55,6 +56,10 @@ class VanillaKNNMTInspectRedundant(TransformerModel):
             embed_tokens,
             no_encoder_attn=getattr(args, "no_cross_attention", False),
         )
+        
+    def after_inference_hook(self):
+        if hasattr(self.decoder, "after_inference_hook"):
+            self.decoder.after_inference_hook()
 
 
 class VanillaKNNMTDecoder(TransformerDecoder):
@@ -87,6 +92,9 @@ class VanillaKNNMTDecoder(TransformerDecoder):
             
             self.num_redundant = 0
             self.num_total_samples = 0
+            
+            self.redundant_tids = np.zeros(shape=(embed_tokens.weight.shape[0],), dtype=int)
+            self.redundant_vocabs = {}
 
     def forward(
         self,
@@ -151,14 +159,30 @@ class VanillaKNNMTDecoder(TransformerDecoder):
             
             redundant_label = (torch.argmax(torch.softmax(combined_prob,dim=-1),dim=-1) == torch.argmax(torch.softmax(net_output[0],dim=-1),dim=-1)).long()
             
+            redundant_token_ids = (torch.argmax(torch.softmax(combined_prob,dim=-1),dim=-1)).view(-1)[redundant_label.view(-1)].detach().cpu().numpy()
+            redundant_count = np.bincount(redundant_token_ids)
+            
+            for i, t in enumerate(redundant_count):
+                self.redundant_tids[i] += t
+            
             self.num_total_samples += batch_size
             self.num_redundant += redundant_label.sum()
-            
-            print(f"Redundant ratio = {self.num_redundant / self.num_total_samples}")
-            
+                
             return combined_prob
         else:
             return super().get_normalized_probs(net_output, log_probs, sample)
+        
+    def after_inference_hook(self):
+        print(f"Redundant ratio = {self.num_redundant / self.num_total_samples} ({self.num_redundant}/{self.num_total_samples})")
+        for i in range(self.redundant_tids.shape[0]):
+            if self.redundant_tids[i] == 0:
+                continue
+            w = self.dictionary[i]
+            self.redundant_vocabs[w] = self.redundant_vocabs.get(w, 0) + self.redundant_tids[i]
+            
+        del self.redundant_vocabs['</s>']
+        s = sorted(zip(self.redundant_vocabs.values(), self.redundant_vocabs.keys()))
+        print(s[-8:])
 
 
 r""" Define some vanilla knn-mt's arch.
