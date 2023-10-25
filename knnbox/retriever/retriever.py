@@ -36,7 +36,7 @@ class Retriever:
         # other information get from self.datastores.datas using indices, for example `keys` and `vals`
         indices = faiss_results["indices"].cpu().numpy()
         for data_name in return_list:
-            if data_name not in ["distances", "indices", "k", "query"]:
+            if data_name not in ["keys", "distances", "indices", "k", "query"]:
                 assert data_name in self.datastore.datas, \
                                     "You must load the {} of datastore first".format(data_name)
                 ret[data_name] = torch.tensor(self.datastore[data_name].data[indices], device=query.device)
