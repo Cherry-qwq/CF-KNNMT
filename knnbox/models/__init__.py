@@ -12,3 +12,4 @@ from .vanilla_knn_mt_inspect_redundant import VanillaKNNMTInspectRedundant
 from .lr_pck_knn_mt_inference import LRPckKNNMT
 from .lr_adaptive_knn_mt import LRAdaptiveKNNMT
 from .BNR_knn_mt import BNRKNNMT
+from .vae_mt import VAEKNNMT
