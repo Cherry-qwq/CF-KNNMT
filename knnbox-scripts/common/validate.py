@@ -166,7 +166,7 @@ def main(args, override_args=None):
             _loss, _sample_size, log_output = task.valid_step(sample, model, criterion)
             progress.log(log_output, step=i)
             log_outputs.append(log_output)
-
+        #这段代码用于在分布式训练环境中收集并聚合每个 GPU 上的验证输出（log_outputs），计算性能指标，然后输出聚合后的指标到控制台。这有助于监控整体分布式训练的性能。
         if args.distributed_world_size > 1:
             log_outputs = distributed_utils.all_gather_list(
                 log_outputs,
@@ -180,7 +180,7 @@ def main(args, override_args=None):
 
         progress.print(log_output, tag=subset, step=i)
     
-
+    #FAISS与剪枝:
     ## knnbox related code start >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
     # release memory to make sure we have enough gpu memory to build faiss index
     del model, task, progress, criterion, dataset
@@ -203,7 +203,7 @@ def main(args, override_args=None):
 
     ## <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< end
 
-
+##parser 被创建并配置为用于解析 Fairseq 框架中验证过程的命令行参数。它包括与数据集、分布式训练、模型和评估相关的参数。这个 parser 对象最终被返回，以便在其他部分的代码中使用
 ## knnbox code start >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 def get_build_datastore_parser(default_task=None):
     r"""

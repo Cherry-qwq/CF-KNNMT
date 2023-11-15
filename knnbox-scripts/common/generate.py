@@ -86,16 +86,16 @@ def _main(args, override_args, output_file):
     else:
         overrides = None
     ## <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-    # Load ensemble
+    # Load ensemble(加载模型集合)
     logger.info("loading model(s) from {}".format(args.path))
     models, _model_args = checkpoint_utils.load_model_ensemble(
         utils.split_paths(args.path),
         arg_overrides=overrides,
         task=task,
-        suffix=getattr(args, "checkpoint_suffix", ""),
-        strict=(args.checkpoint_shard_count == 1),
+        suffix=getattr(args, "checkpoint_suffix", ""),# 检查点文件的后缀。
+        strict=(args.checkpoint_shard_count == 1),#一个布尔值，指示是否对检查点文件的加载使用严格模式
         num_shards=args.checkpoint_shard_count,
-    )
+    )#返回模型集合与模型相关参数
 
     if args.lm_path is not None:
         overrides["data"] = args.data

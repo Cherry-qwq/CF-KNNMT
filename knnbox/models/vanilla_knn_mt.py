@@ -118,6 +118,8 @@ class VanillaKNNMTDecoder(TransformerDecoder):
         when the action mode is `building datastore`, we save keys to datastore.
         when the action mode is `inference`, we retrieve the datastore with hidden state.
         """
+
+        ###x储存hidden_state
         x, extra = self.extract_features(
             prev_output_tokens,
             encoder_out=encoder_out,
@@ -136,10 +138,11 @@ class VanillaKNNMTDecoder(TransformerDecoder):
             ## query with x (x needn't to be half precision), 
             ## save retrieved `vals` and `distances`
             #record_timer_start(self.retrieve_timer)
+            #检索器返回最近的几个点的val和distance
             self.retriever.retrieve(x, return_list=["vals", "distances"])
             #record_timer_end(self.retrieve_timer)
         
-        if not features_only:
+        if not features_only:#？
             x = self.output_layer(x)
         return x, extra
     
@@ -159,6 +162,7 @@ class VanillaKNNMTDecoder(TransformerDecoder):
         """
         if self.args.knn_mode == "inference":
             #record_timer_start(self.retrieve_timer)
+            #用combiner把knn的概率取到，并结合在一起
             knn_prob = self.combiner.get_knn_prob(**self.retriever.results, device=net_output[0].device)
             combined_prob, _ = self.combiner.get_combined_prob(knn_prob, net_output[0], log_probs=log_probs)
             #record_timer_end(self.retrieve_timer)

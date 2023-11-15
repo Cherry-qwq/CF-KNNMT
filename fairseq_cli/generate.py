@@ -122,6 +122,8 @@ def _main(args, output_file):
             model.half()
         if use_cuda and not args.pipeline_model_parallel:
             model.cuda()
+##########################################################
+
         model.prepare_for_inference_(args)
 
     # Load alignment dictionary for unknown word replacement
@@ -188,6 +190,15 @@ def _main(args, output_file):
             constraints = sample["constraints"]
 
         gen_timer.start()
+###############################
+
+#
+#hypos 是生成的翻译假设的列表。在Fairseq中，每个假设都是一个包含以下信息的字典：
+
+#"tokens": 包含生成假设的标记（tokens）的张量。
+#"score": 假设的得分。
+#"attention": 注意力分布（如果可用）。
+
         hypos = task.inference_step(
             generator,
             models,
@@ -197,6 +208,7 @@ def _main(args, output_file):
         )
         num_generated_tokens = sum(len(h[0]["tokens"]) for h in hypos)
         gen_timer.stop(num_generated_tokens)
+
 
         for i, sample_id in enumerate(sample["id"].tolist()):
             has_target = sample["target"] is not None
@@ -210,7 +222,7 @@ def _main(args, output_file):
                 src_tokens = None
 
             target_tokens = None
-            if has_target:
+            if has_target:#是否有目标句子
                 target_tokens = (
                     utils.strip_pad(sample["target"][i, :], tgt_dict.pad()).int().cpu()
                 )
@@ -247,6 +259,7 @@ def _main(args, output_file):
                     print("T-{}\t{}".format(sample_id, target_str), file=output_file)
 
             # Process top predictions
+
             for j, hypo in enumerate(hypos[i][: args.nbest]):
                 hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
                     hypo_tokens=hypo["tokens"].int().cpu(),
