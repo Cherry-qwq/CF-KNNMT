@@ -289,3 +289,53 @@ class MetersDict(OrderedDict):
 
         def reset(self):
             pass
+
+### Add
+class StopWatchTimer:
+    '''
+    Timer for time measurement.
+    '''
+    def __init__(self, cudaSyncOnEvents=False, cudaStream : torch.cuda.Stream=None) -> None:
+        '''
+        Args:
+            cudaSyncOnEvents: Call cuda synchronize if start、stop、reset、elapsedTime is called
+        '''
+        self.startTime = None 
+        self.totalTime = 0
+        self.itemCount = 0
+        
+        if cudaSyncOnEvents and (not torch.cuda.is_available()):
+            raise RuntimeError("cuda is not available")
+        
+        self.cudaSyncOnEvents = cudaSyncOnEvents
+        self.cudaStream = cudaStream
+        if cudaStream:
+            self.cudaSyncFunction = cudaStream.synchronize
+        else:
+            self.cudaSyncFunction = torch.cuda.synchronize
+        
+    def __cudaSync(self): 
+        if self.cudaSyncOnEvents:
+            self.cudaSyncFunction()
+        
+    def start(self):
+        self.__cudaSync()
+        self.startTime = time.perf_counter()
+        
+    def stop(self, itemCount=0):
+        if self.startTime is not None:
+            self.__cudaSync()
+            dtime = time.perf_counter() - self.startTime
+            self.totalTime += dtime
+            self.itemCount += itemCount
+            
+    def reset(self):
+        self.itemCount = 0
+        self.totalTime = 0
+        self.start()
+        
+    def elapsedTime(self) -> float:
+        if self.startTime is None: 
+            return 0.0
+        self.__cudaSync()
+        return time.perf_counter() - self.startTime

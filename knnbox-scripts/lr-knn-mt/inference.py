@@ -78,6 +78,7 @@ def add_common_arguments(parser : argparse.ArgumentParser):
     parser.add_argument("--run-3-time", default=False, action='store_true')
     parser.add_argument("--no-translation-loss", default=False, action='store_true')
     parser.add_argument("--test-knn-overhead", default=False, action='store_true')
+    parser.add_argument("--knn-k", default=None)
 
 
 if __name__ == "__main__":
@@ -130,6 +131,9 @@ if __name__ == "__main__":
             "--knn-datastore-path", str(DEFAULT_DATASTORE_PATH[(args.model, args.dataset)]),
             "--knn-temperature", str(DEFAULT_KNN_TEMPERATURE[args.dataset])
         ]
+        if args.knn_k:
+            cmd.append("--knn-k")
+            cmd.append(str(args.knn_k))
         
         if args.model in ["lr", "vanilla"]:
             cmd.append("--knn-lambda")
@@ -149,20 +153,21 @@ if __name__ == "__main__":
             cmd.append(pjdir(f"save-models/combiner/pck/{args.dataset}_dim64"))
             
         # about knn k
-        if not "adaptive" in args.model:
-            if not 'pck' in args.model:
-                cmd.append("--knn-k")
-                cmd.append("8")
+        if args.knn_k is None:
+            if not "adaptive" in args.model:
+                if not 'pck' in args.model:
+                    cmd.append("--knn-k")
+                    cmd.append("8")
+                else:
+                    cmd.append("--knn-max-k")
+                    cmd.append("4")
+                    cmd.append("--knn-temperature-type")
+                    cmd.append("fixed")
             else:
                 cmd.append("--knn-max-k")
-                cmd.append("4")
+                cmd.append("8")
                 cmd.append("--knn-temperature-type")
                 cmd.append("fixed")
-        else:
-            cmd.append("--knn-max-k")
-            cmd.append("8")
-            cmd.append("--knn-temperature-type")
-            cmd.append("fixed")
         
         script = [sys.executable, pjdir("knnbox-scripts/common/generate.py")]
         script.extend(cmd)

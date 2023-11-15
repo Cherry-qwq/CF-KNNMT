@@ -16,13 +16,143 @@ from knnbox.datastore import Datastore
 from knnbox.retriever import Retriever
 from knnbox.combiner import Combiner
 
+### Added for measuring KNN time
+from fairseq.logging.meters import StopwatchMeter
 import torch
-import numpy as np
+import torch.nn as nn
+import torch.nn.functional as F
+from typing import Mapping, Union
 
-MODEL_NAME = "vanilla_knn_mt_inspect_redundant"
+def record_timer_start(t : StopwatchMeter):
+    torch.cuda.synchronize()  # Synchronize to ensure precision.
+    t.start()
+    
+def record_timer_end(t : StopwatchMeter):
+    torch.cuda.synchronize()  # Synchronize to ensure precision.
+    t.stop()
+    
+class CrossEmbedding(nn.Module):
+    def __init__(self, dense_features, onehot_features, output_features, bias=True):    
+        self.dense_proj = nn.Parameter(torch.randn(size=(1,output_features, dense_features)), requires_grad=True)
+        self.onehot_embed = nn.Parameter(torch.randn(size=(onehot_features, output_features)), requires_grad=True)
+        self.dense_features = dense_features
+        self.onehot_features = onehot_features
+        self.output_features = output_features
+        if bias:
+            self.bias = nn.Parameter(torch.zeros(size=(output_features)), requires_grad=True)
+        
+    def forward(self, dense_features : torch.Tensor, onehot_features : torch.Tensor) -> torch.Tensor:
+        r'''
+        Args:
+            dense_features: [batch_size, dense_features]
+            onehot_features: [batch_size]
+        '''
+        
+        batch_shape = dense_features.shape[:-1]
+        batch_size = dense_features.numel() // dense_features.shape[-1]
+        
+        assert dense_features.shape[0] == onehot_features.shape[0]       
+ 
+        X_ = dense_features.view(batch_size, -1)
+        
+        Y1 = torch.bmm(self.dense_proj.expand(batch_shape,-1,-1), X_[:,:self.dense_features].unsqueeze(-1)).squeeze(-1)
+        Y2 = self.onehot_embed[onehot_features]
+        
+        if self.bias is None:
+            return Y1 + Y2
+        else:
+            return Y1 + Y2 + self.bias
+        
+class SampleGenerator(nn.Module):
+    def __init__(self, latent_size, hidden_size, output_size) -> None:
+        super().__init__()
+        self.l1 = nn.Linear(latent_size, hidden_size)
+        self.l2 = nn.Linear(hidden_size, output_size)
+    
+    def forward(self, X : torch.Tensor) -> torch.Tensor:
+        X = F.relu(self.l1(X))
+        return torch.sigmoid(self.l2(X))
+        
+class VAEForSimilarSimples(nn.Module):
+    def __init__(self, input_size, output_size, condition_size, hidden_size, latent_size = None) -> None:
+        super().__init__()
+        if latent_size is None:
+            latent_size = hidden_size
+            
+       # self.embed = 
+        self.proj_mu = nn.Linear(hidden_size, latent_size) 
+        self.proj_log_sigma = nn.Linear(hidden_size, latent_size) 
+        
+        #self.loss_for_reconstructing = nn.MSELoss(reduction='mean')
+        #self.loss_for_reconstructing = nn.BCELoss(reduction='mean')
+        
+        #self.encoder = VAEEncoder(input_size + condition_size, hidden_size, latent_size)
+        self.decoder = SampleGenerator(latent_size + condition_size, hidden_size, output_size)
+        
+        self.device = 'cpu'
+        
+        self.latent_size = latent_size
+        self.condition_size = condition_size
+        
+    def loss_KLD(self, mu, sigma):
+        return torch.sum(sigma - (1 + torch.log(sigma)) + mu**2, dim=-1).mean()
 
-@register_model(MODEL_NAME)
-class VanillaKNNMTInspectRedundant(TransformerModel):
+        
+    def forward(self, X : Mapping[str, Union[torch.Tensor, int, str, object]]) -> Mapping[str, torch.Tensor]:
+        #mu, log_sigma = self.encoder(torch.cat([X['input'], X['condition']], dim=-1))
+        
+        sigma = torch.exp(log_sigma)
+        
+        eps = torch.randn_like(sigma)
+        
+        z = mu + eps * sigma
+        
+        ret = {
+            "features" : self.decoder(torch.cat([z, X['condition']], dim=-1)),
+            "mu" : mu,
+            "sigma" : sigma
+        }     
+        if 'target' in X:
+            loss = self.loss_for_reconstructing(ret["features"], X["target"]) + self.loss_KLD(mu, sigma)
+            ret["loss"] = loss
+        
+        return ret
+    
+    def to(self, device):
+        self.device = device
+        return nn.Module.to(self, device)
+    
+    
+class RepresentationTransform(nn.Module):
+    def __init__(self, query_size, hidden_size_ffn, hidden_size_vae, latent_size = None) -> None:
+        super().__init__()
+        
+        self.ffn = nn.Sequential(
+            nn.Linear(query_size, hidden_size_ffn),
+            nn.Linear(hidden_size_ffn, query_size)
+        )
+        self.vae = CVAE(query_size, query_size, query_size, hidden_size_vae, latent_size)
+        
+    def forwad(self, X : Mapping[str, torch.Tensor]) -> Mapping[str, torch.Tensor]:
+        query = X["query"]
+        
+        transed_query = query + self.ffn(query)
+        
+        out = self.vae({
+            "input" : transed_query,
+            "condition" : query,
+            "target" : transed_query
+        })
+        
+        
+    def decode(self, query):
+        pass
+        
+        
+
+
+@register_model("vae_mt")
+class VAEKNNMT(TransformerModel):
     r"""
     The vanilla knn-mt model.
     """
@@ -32,9 +162,9 @@ class VanillaKNNMTInspectRedundant(TransformerModel):
         add knn-mt related args here
         """
         TransformerModel.add_args(parser)
-        parser.add_argument("--knn-mode", choices= ["build_datastore", "inference"],
+        parser.add_argument("--knn-mode", choices= ["build_datastore", "inference", "train_phase1", "train_phase2"],
                             help="choose the action mode")
-        parser.add_argument("--knn-datastore-path", type=str, metavar="STR",
+        parser.add_argument("--knn-datastore-path", type=str, metavar="STR", 
                             help="the directory of save or load datastore")
         parser.add_argument("--knn-k", type=int, metavar="N", default=8,
                             help="The hyper-parameter k of vanilla knn-mt")
@@ -44,25 +174,26 @@ class VanillaKNNMTInspectRedundant(TransformerModel):
                             help="The hyper-parameter temperature of vanilla knn-mt")
         parser.add_argument("--build-faiss-index-with-cpu", action="store_true", default=False,
                             help="use faiss-cpu instead of faiss-gpu (useful when gpu memory is small)")
+        parser.add_argument("--random_seed", type=int, default=233)
     
     @classmethod
     def build_decoder(cls, args, tgt_dict, embed_tokens):
         r"""
         we override this function, replace the TransformerDecoder with VanillaKNNMTDecoder
         """
-        return VanillaKNNMTDecoder(
+        return VAEKNNMTDecoder(
             args,
             tgt_dict,
             embed_tokens,
             no_encoder_attn=getattr(args, "no_cross_attention", False),
         )
-        
+
+
     def after_inference_hook(self):
         if hasattr(self.decoder, "after_inference_hook"):
             self.decoder.after_inference_hook()
 
-
-class VanillaKNNMTDecoder(TransformerDecoder):
+class VAEKNNMTDecoder(TransformerDecoder):
     r"""
     The vanilla knn-mt Decoder, equipped with knn datastore, retriever and combiner.
     """
@@ -90,25 +221,12 @@ class VanillaKNNMTDecoder(TransformerDecoder):
             self.combiner = Combiner(lambda_=args.knn_lambda,
                      temperature=args.knn_temperature, probability_dim=len(dictionary))
             
-            self.num_redundant = 0
-            self.num_total_samples = 0
-            
-            self.redundant_tids = np.zeros(shape=(embed_tokens.weight.shape[0],), dtype=int)
-            self.redundant_vocabs = {}
-            
-            self.token2id = {}
-            for i in range(len(self.dictionary)):
-                self.token2id[self.dictionary[i]] = i
-                
-            self.punc_tokens = ['!','.','#','(',')','$','@','*','%','-','+', ',', ':', ";", "<", ">", "?", "/", "\\", "[", "]", "="] 
-            self.art_tokens = ['the', 'a', 'an', 'this', 'that', 'these', 'those', 'it'] 
-            self.be_tokens = ['is', 'am', 'are', 'was', 'were', 'be']
-            self.prep_tokens =  ['of', 'on', 'to', 'with', 'at', 'in', 'about', 'by', 'for', 'from'] 
-            
-            self.cnt_punc = 0
-            self.cnt_art = 0
-            self.cnt_be = 0
-            self.cnt_prep = 0
+            self.retrieve_timer = StopwatchMeter()
+
+        elif args.knn_mode == "train_phase1":
+            pass
+        elif args.knn_mode == "train_phase2":
+            pass
 
     def forward(
         self,
@@ -145,7 +263,9 @@ class VanillaKNNMTDecoder(TransformerDecoder):
         elif self.args.knn_mode == "inference":
             ## query with x (x needn't to be half precision), 
             ## save retrieved `vals` and `distances`
+            #record_timer_start(self.retrieve_timer)
             self.retriever.retrieve(x, return_list=["vals", "distances"])
+            #record_timer_end(self.retrieve_timer)
         
         if not features_only:
             x = self.output_layer(x)
@@ -166,106 +286,62 @@ class VanillaKNNMTDecoder(TransformerDecoder):
             combine the knn probability with NMT's probability 
         """
         if self.args.knn_mode == "inference":
+            #record_timer_start(self.retrieve_timer)
             knn_prob = self.combiner.get_knn_prob(**self.retriever.results, device=net_output[0].device)
             combined_prob, _ = self.combiner.get_combined_prob(knn_prob, net_output[0], log_probs=log_probs)
-            
-            batch_size = knn_prob.shape[0]
-            
-            redundant_label = (torch.argmax(torch.softmax(combined_prob,dim=-1),dim=-1) == torch.argmax(torch.softmax(net_output[0],dim=-1),dim=-1)).long()
-            
-            redundant_token_ids = (torch.argmax(torch.softmax(combined_prob,dim=-1),dim=-1)).view(-1)[redundant_label.view(-1)].detach().cpu().numpy()
-            # for i in redundant_token_ids:
-            #     self.redundant_tids[i] += 1
-            #     tok = self.dictionary[i].lower()
-            #     if tok in self.punc_tokens:
-            #         self.cnt_punc += 1
-            #     elif tok in self.art_tokens:
-            #         self.cnt_art += 1
-            #     elif tok in self.be_tokens:
-            #         self.cnt_be += 1
-            #     elif tok in self.prep_tokens:
-            #         self.cnt_prep += 1
-            
-            # Maybe faster
-            redundant_count = np.bincount(redundant_token_ids)
-            for i, t in enumerate(redundant_count):
-                self.redundant_tids[i] += t
-                tok = self.dictionary[i].lower()
-                if tok in self.punc_tokens:
-                    self.cnt_punc += t
-                elif tok in self.art_tokens:
-                    self.cnt_art += t 
-                elif tok in self.be_tokens:
-                    self.cnt_be += t
-                elif tok in self.prep_tokens:
-                    self.cnt_prep += t
-            
-            self.num_total_samples += batch_size
-            self.num_redundant += redundant_label.sum()
-                
+            #record_timer_end(self.retrieve_timer)
             return combined_prob
         else:
             return super().get_normalized_probs(net_output, log_probs, sample)
         
     def after_inference_hook(self):
-        print(f"Redundant ratio = {self.num_redundant / self.num_total_samples} ({self.num_redundant}/{self.num_total_samples})")
-        for i in range(self.redundant_tids.shape[0]):
-            if self.redundant_tids[i] == 0:
-                continue
-            w = self.dictionary[i]
-            self.redundant_vocabs[w] = self.redundant_vocabs.get(w, 0) + self.redundant_tids[i]
-            
-        del self.redundant_vocabs['</s>']
-        s = sorted(zip(self.redundant_vocabs.values(), self.redundant_vocabs.keys()))
-        print(s[-8:])
-        
-        with open("redundant_values.txt", "w") as f:
-            for p in s:
-                f.write(f"{p[1]}, {p[0]}\n")
-        
-        print(f"punc:{self.cnt_punc}, {self.cnt_punc / self.num_total_samples}")
-        print(f"art:{self.cnt_art}, {self.cnt_art / self.num_total_samples}")
-        print(f"be:{self.cnt_be}, {self.cnt_be / self.num_total_samples}")
-        print(f"prep:{self.cnt_prep}, {self.cnt_prep / self.num_total_samples}")
+        if self.retrieve_timer.start_time is None:
+            print("KNN overhead time is not recoreded")
+        else:
+            print(f"KNN overhead time = {self.retrieve_timer.sum}s")
 
 
 r""" Define some vanilla knn-mt's arch.
      arch name format is: knn_mt_type@base_model_arch
 """
-@register_model_architecture(MODEL_NAME, f"{MODEL_NAME}@transformer")
+@register_model_architecture("vae_mt", "vae_mt@transformer")
 def base_architecture(args):
     archs.base_architecture(args)
 
-@register_model_architecture(MODEL_NAME, f"{MODEL_NAME}@transformer_iwslt_de_en")
+@register_model_architecture("vae_mt", "vae_mt@transformer_iwslt_de_en")
 def transformer_iwslt_de_en(args):
     archs.transformer_iwslt_de_en(args)
 
-@register_model_architecture(MODEL_NAME, f"{MODEL_NAME}@transformer_wmt_en_de")
+@register_model_architecture("vae_mt", "vae_mt@transformer_wmt_en_de")
 def transformer_wmt_en_de(args):
     archs.base_architecture(args)
 
 # parameters used in the "Attention Is All You Need" paper (Vaswani et al., 2017)
-@register_model_architecture(MODEL_NAME, f"{MODEL_NAME}@transformer_vaswani_wmt_en_de_big")
+@register_model_architecture("vae_mt", "vae_mt@transformer_vaswani_wmt_en_de_big")
 def transformer_vaswani_wmt_en_de_big(args):
     archs.transformer_vaswani_wmt_en_de_big(args)
 
-@register_model_architecture(MODEL_NAME, f"{MODEL_NAME}@transformer_vaswani_wmt_en_fr_big")
+@register_model_architecture("vae_mt", "vae_mt@transformer_vaswani_wmt_en_fr_big")
 def transformer_vaswani_wmt_en_fr_big(args):
     archs.transformer_vaswani_wmt_en_fr_big(args)
 
-@register_model_architecture(MODEL_NAME, f"{MODEL_NAME}@transformer_wmt_en_de_big")
+@register_model_architecture("vae_mt", "vae_mt@transformer_wmt_en_de_big")
 def transformer_wmt_en_de_big(args):
     archs.transformer_vaswani_wmt_en_de_big(args)
 
 # default parameters used in tensor2tensor implementation
-@register_model_architecture(MODEL_NAME, f"{MODEL_NAME}@transformer_wmt_en_de_big_t2t")
+@register_model_architecture("vae_mt", "vae_mt@transformer_wmt_en_de_big_t2t")
 def transformer_wmt_en_de_big_t2t(args):
     archs.transformer_wmt_en_de_big_t2t(args)
 
-@register_model_architecture(MODEL_NAME, f"{MODEL_NAME}@transformer_wmt19_de_en")
+@register_model_architecture("vae_mt", "vae_mt@transformer_wmt19_de_en")
 def transformer_wmt19_de_en(args):
     archs.transformer_wmt19_de_en(args)
 
-@register_model_architecture(MODEL_NAME, f"{MODEL_NAME}@transformer_zh_en")
+@register_model_architecture("vae_mt", "vae_mt@transformer_zh_en")
 def transformer_zh_en(args):
     archs.transformer_zh_en(args)
+    
+
+        
+
