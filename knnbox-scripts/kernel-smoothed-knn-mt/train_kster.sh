@@ -19,7 +19,7 @@ DATASTORE_LOAD_PATH=$PROJECT_PATH/datastore/vanilla/medical
 SAVE_DIR=$PROJECT_PATH/save-models/combiner/kernel_smooth/medical
 
 ## using paper's setting
-CUDA_VISIBLE_DEVICES=0 python $PROJECT_PATH/knnbox-scripts/common/train.py $DATA_PATH \
+CUDA_VISIBLE_DEVICES=1,2 python $PROJECT_PATH/knnbox-scripts/common/train.py $DATA_PATH \
 --task translation \
 --train-subset train --valid-subset valid \
 --best-checkpoint-metric "loss" --patience 30 --max-epoch 500 --max-update 5000 \

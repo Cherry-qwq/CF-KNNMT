@@ -8,10 +8,12 @@ class Combiner:
     A simple Combiner used by vanilla knn-mt
     """
 
-    def __init__(self, lambda_, temperature, probability_dim):
+    def __init__(self, lambda_, temperature, probability_dim,datastore_path):
+    #def __init__(self, lambda_, temperature, probability_dim):
         self.lambda_ = lambda_
         self.temperature = temperature
         self.probability_dim = probability_dim
+        self.datastore_path = datastore_path
 
     def get_knn_prob(self, vals, distances, temperature=None, device="cuda:0", **kwargs):
         r"""
@@ -20,7 +22,8 @@ class Combiner:
         """
         temperature = temperature if temperature is not None else self.temperature  
         return calculate_knn_prob(vals, distances, self.probability_dim,
-                     temperature, device, **kwargs)
+                    # temperature, device, **kwargs)
+                    temperature, device,self.datastore_path, **kwargs)
 
     
     def get_combined_prob(self, knn_prob, neural_model_logit, lambda_ = None, log_probs = False):

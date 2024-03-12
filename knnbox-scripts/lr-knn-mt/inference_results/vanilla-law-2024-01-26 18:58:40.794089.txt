@@ -1,0 +1,3 @@
+If you insist your data is detokenized, or don't care, you can suppress this message with the `force` parameter.
+beam=4: BLEU = 60.89 81.6/66.7/57.4/50.3 (BP = 0.967 ratio = 0.968 hyp_len = 63854 ref_len = 65975)
+KNN overhead time is not recoreded

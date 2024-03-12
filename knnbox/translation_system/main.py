@@ -45,6 +45,7 @@ def preprocess(sentence,vocab_dict):
 def postprocess(output):
     #什么格式的输出我不道哇
     a = 0
+    
 if __name__ == "__main__":
     parser = get_knn_generation_parser()
     args = options.parse_args_and_arch(parser)
@@ -54,14 +55,15 @@ if __name__ == "__main__":
 
     task = tasks.setup_task(args)
     model = task.build_model(args)
-    base_model = '/data/qirui/KNN-BOX-copy-copy/pretrain-models/wmt20.en-zh/en-zh.pt'
+    base_model = '/data/qirui/KNN-BOX-copy-copy/pretrain-models/wmt20.en-zh/en_zh_2.pt'
+    
     if override_args is not None:
         overrides = vars(override_args)
         overrides.update(eval(getattr(override_args, "model_overrides", "{}")))
     else:
         overrides = None
     state = load_checkpoint_to_cpu(base_model, overrides)
-    model.load_state_dict(state["model"], strict=False, args=args)
+    model.load_state_dict(state["model"], strict=True, args=args)
     
     if args.fp16:
         model.half()
@@ -83,37 +85,41 @@ if __name__ == "__main__":
         if tokenizer is not None:
             x = tokenizer.decode(x)
         return x
-    INPUT_IDS = task.source_dictionary.encode_line(
-            encode_fn("hello, how are you?"), add_if_not_exist=False
-        ).long().cuda().unsqueeze(0)
     
-    seq_gen =SequenceGenerator (
-            [model],
-            task.target_dictionary,
-            beam_size=getattr(args, "beam", 5),
-            max_len_a=getattr(args, "max_len_a", 0),
-            max_len_b=getattr(args, "max_len_b", 200),
-            min_len=getattr(args, "min_len", 1),
-            normalize_scores=(not getattr(args, "unnormalized", False)),
-            len_penalty=getattr(args, "lenpen", 1),
-            unk_penalty=getattr(args, "unkpen", 0),
-            temperature=getattr(args, "temperature", 1.0),
-            match_source_len=getattr(args, "match_source_len", False),
-            no_repeat_ngram_size=getattr(args, "no_repeat_ngram_size", 0),
-            search_strategy=None
-            
-        )
-    sample = {
-        "net_input" : {
-            "src_tokens": INPUT_IDS,
-            "src_lengths": torch.tensor([[INPUT_IDS.numel()]], device = "cuda")
+    
+    print("Enter English sentences and translate to Chinese:\n")
+    while True:
+        s = input()  # 键盘输入原文
+        INPUT_IDS = task.source_dictionary.encode_line(
+                encode_fn(s), add_if_not_exist=False
+            ).long().cuda().unsqueeze(0)
+        
+        seq_gen =SequenceGenerator (
+                [model],
+                task.target_dictionary,
+                beam_size=getattr(args, "beam", 5),
+                max_len_a=getattr(args, "max_len_a", 0),
+                max_len_b=getattr(args, "max_len_b", 200),
+                min_len=getattr(args, "min_len", 1),
+                normalize_scores=(not getattr(args, "unnormalized", False)),
+                len_penalty=getattr(args, "lenpen", 1),
+                unk_penalty=getattr(args, "unkpen", 0),
+                temperature=getattr(args, "temperature", 1.0),
+                match_source_len=getattr(args, "match_source_len", False),
+                no_repeat_ngram_size=getattr(args, "no_repeat_ngram_size", 0),
+                search_strategy=None
+            )
+        sample = {
+            "net_input" : {
+                "src_tokens": INPUT_IDS,
+                "src_lengths": torch.tensor([[INPUT_IDS.numel()]], device = "cuda")
+            }
+
         }
+        res = seq_gen.generate([],sample)
+        output_ids = res[0][0]['tokens'].cpu()
 
-    }
-    res = seq_gen.generate([],sample)
-    output_ids = res[0][0]['tokens'].cpu()
+        translated_text = decode_fn(task.target_dictionary.string(output_ids))
 
-    translated_text = decode_fn(task.target_dictionary.string(output_ids))
-
-    print(translated_text)
+        print(translated_text.replace('@@ ', ''))
     

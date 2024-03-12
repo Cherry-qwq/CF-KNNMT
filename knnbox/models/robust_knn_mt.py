@@ -235,7 +235,7 @@ class RobustKNNMTDecoder(TransformerDecoder):
             tgt_index = self.retriever.results["vals"]
             knn_key = self.retriever.results["keys"]
             queries = self.retriever.results["query"]
-            
+
             knn_dists = torch.sum((knn_key - queries.unsqueeze(-2).detach()) ** 2, dim=-1)   
             knn_dists, new_index = torch.sort(knn_dists, dim=-1)
             tgt_index = tgt_index.gather(dim=-1, index=new_index)

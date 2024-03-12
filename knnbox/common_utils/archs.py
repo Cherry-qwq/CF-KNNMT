@@ -103,3 +103,9 @@ def transformer_zh_en(args):
    args.encoder_normalize_before = getattr(args, "encoder_normalize_before", True)
    args.decoder_normalize_before = getattr(args, "decoder_normalize_before", True)
    base_architecture(args)
+
+def transformer_en_zh(args):
+    args.encoder_embed_dim = 512
+    args.encoder_ffn_embed_dim = 2048
+
+    base_architecture(args)

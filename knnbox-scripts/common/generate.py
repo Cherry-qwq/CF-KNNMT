@@ -19,6 +19,7 @@ from fairseq.logging import progress_bar
 from fairseq.logging.meters import StopwatchMeter, TimeMeter
 
 def main(args, override_args):
+    #验证一些必要的参数
     assert args.path is not None, "--path required for generation!"
     assert (
         not args.sampling or args.nbest == args.beam
@@ -53,7 +54,7 @@ def _main(args, override_args, output_file):
         stream=output_file,
     )
     logger = logging.getLogger("fairseq_cli.generate")
-
+    #导入用户模块
     utils.import_user_module(args)
 
     if args.max_tokens is None and args.batch_size is None:
@@ -68,9 +69,10 @@ def _main(args, override_args, output_file):
     use_cuda = torch.cuda.is_available() and not args.cpu
 
     # Load dataset splits
+    #根据提供的参数设置任务（例如翻译任务）
     task = tasks.setup_task(args)
     task.load_dataset(args.gen_subset)
-
+    
     # Set dictionaries
     try:
         src_dict = getattr(task, "source_dictionary", None)
@@ -96,7 +98,7 @@ def _main(args, override_args, output_file):
         strict=(args.checkpoint_shard_count == 1),#一个布尔值，指示是否对检查点文件的加载使用严格模式
         num_shards=args.checkpoint_shard_count,
     )#返回模型集合与模型相关参数
-
+    
     if args.lm_path is not None:
         overrides["data"] = args.data
 
@@ -153,7 +155,7 @@ def _main(args, override_args, output_file):
         default_log_format=("tqdm" if not args.no_progress_bar else "none"),
     )
 
-    # Initialize generator
+    # Initialize generator初始化生成器和评分器
     gen_timer = StopwatchMeter()
 
     extra_gen_cls_kwargs = {"lm_model": lms[0], "lm_weight": args.lm_weight}
@@ -189,7 +191,18 @@ def _main(args, override_args, output_file):
         constraints = None
         if "constraints" in sample:
             constraints = sample["constraints"]
-
+        """
+        这里是NMT模型的标准输出，例如：
+        输入：我养了一只狗
+        hypos:
+        [
+    [
+        {"tokens": [I, have, a, dog], "score": -0.5, "positional_scores": [-0.1, -0.1, -0.2, -0.1], ...},
+        {"tokens": [I, own, a, dog], "score": -0.7, "positional_scores": [-0.2, -0.1, -0.2, -0.2], ...},
+        ...
+    ]
+]
+        """
         gen_timer.start()
         hypos = task.inference_step(
             generator,
@@ -198,6 +211,7 @@ def _main(args, override_args, output_file):
             prefix_tokens=prefix_tokens,
             constraints=constraints,
         )
+        
         num_generated_tokens = sum(len(h[0]["tokens"]) for h in hypos)
         gen_timer.stop(num_generated_tokens)
 
@@ -213,12 +227,13 @@ def _main(args, override_args, output_file):
                 src_tokens = None
 
             target_tokens = None
-            if has_target:
+            if has_target:#如果这句话有标准答案，就对其进行处理，去掉pad
                 target_tokens = (
                     utils.strip_pad(sample["target"][i, :], tgt_dict.pad()).int().cpu()
                 )
 
             # Either retrieve the original sentences or regenerate them from tokens.
+            #取得目标语言的原始文本，或者通过词典把目标tokens转化成目标句子
             if align_dict is not None:
                 src_str = task.dataset(args.gen_subset).src.get_original_text(sample_id)
                 target_str = task.dataset(args.gen_subset).tgt.get_original_text(
@@ -238,17 +253,17 @@ def _main(args, override_args, output_file):
                             generator
                         ),
                     )
-
+            #将句子转换回人类可读的形式（解码）
             src_str = decode_fn(src_str)
             if has_target:
                 target_str = decode_fn(target_str)
-
+            #输出源语句和目标语句
             if not args.quiet:
                 if src_dict is not None:
                     print("S-{}\t{}".format(sample_id, src_str), file=output_file)
                 if has_target:
                     print("T-{}\t{}".format(sample_id, target_str), file=output_file)
-
+            
             # Process top predictions
             for j, hypo in enumerate(hypos[i][: args.nbest]):
                 hypo_tokens, hypo_str, alignment = utils.post_process_prediction(

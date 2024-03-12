@@ -32,6 +32,9 @@ class Retriever:
             ret["k"] = k
         if "query" in return_list:
             ret["query"] = query
+        if "keys" in return_list:#########
+            indices = faiss_results["indices"].cpu().numpy()
+            ret["keys"] = torch.tensor(self.datastore["keys"].data[indices], device=query.device)
 
         # other information get from self.datastores.datas using indices, for example `keys` and `vals`
         indices = faiss_results["indices"].cpu().numpy()

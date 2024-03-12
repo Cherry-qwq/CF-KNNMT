@@ -44,8 +44,8 @@ DEFAULT_KNN_TEMPERATURE = {
 }
 
 DEFAULT_KNN_LAMBDA = {
-    "it" : 0.7,
-    "medical" : 0.8,
+    "it" : 0.7,#0.7
+    "medical" : 0.8,#0.8
     "law" : 0.8,
     "koran" : 0.8
 }
@@ -62,7 +62,7 @@ def pjdir(x):
 def get_base_env(args):
     e = os.environ.copy()
     e["OMP_WAIT_POLICY"] = "PASSIVE"
-    e["CUDA_VISIBLE_DEVICES"] = str(args.single_gpu_index)
+    e["CUDA_VISIBLE_DEVICES"] = "5"#str(args.single_gpu_index)
     return e
 
 def get_arch(m):
@@ -157,7 +157,7 @@ if __name__ == "__main__":
             if not "adaptive" in args.model:
                 if not 'pck' in args.model:
                     cmd.append("--knn-k")
-                    cmd.append("8")
+                    cmd.append("8")#8
                 else:
                     cmd.append("--knn-max-k")
                     cmd.append("4")
@@ -168,7 +168,7 @@ if __name__ == "__main__":
                 cmd.append("8")
                 cmd.append("--knn-temperature-type")
                 cmd.append("fixed")
-        
+        #创建一个完整的命令行指令，用于启动并运行 knnbox-scripts/common/generate.py 脚本，并向其传递所有必要的参数
         script = [sys.executable, pjdir("knnbox-scripts/common/generate.py")]
         script.extend(cmd)
     
@@ -176,6 +176,7 @@ if __name__ == "__main__":
     
     
     if not args.run_3_time:
+        #执行之前构建的 script 命令行指令。
         p = subprocess.Popen(script, env=get_base_env(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, err = p.communicate()
         p.wait()

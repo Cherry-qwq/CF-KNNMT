@@ -1,0 +1,3 @@
+Translated 2000 sentences (54046 tokens) in 493.1s (4.06 sentences/s, 109.60 tokens/s)
+beam=4: BLEU = 0.00 92.9/100.0/100.0/0.0 (BP = 0.000 ratio = 0.017 hyp_len = 396 ref_len = 22928)
+KNN overhead time is not recoreded

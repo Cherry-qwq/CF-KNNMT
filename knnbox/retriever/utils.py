@@ -14,4 +14,5 @@ def retrieve_k_nearest(query, faiss_index, k):
     distances = torch.tensor(distances, device=query.device).view(*query_shape[:-1], k)
     indices = torch.tensor(indices,device=query.device).view(*query_shape[:-1], k)
 
+
     return {"distances": distances, "indices": indices}
