@@ -42,9 +42,7 @@ def preprocess(sentence,vocab_dict):
     
     return dic_content
 
-def postprocess(output):
-    #什么格式的输出我不道哇
-    a = 0
+
     
 if __name__ == "__main__":
     parser = get_knn_generation_parser()
@@ -55,7 +53,7 @@ if __name__ == "__main__":
 
     task = tasks.setup_task(args)
     model = task.build_model(args)
-    base_model = '/data/qirui/KNN-BOX-copy-copy/pretrain-models/wmt20.en-zh/en_zh_2.pt'
+    base_model = args.path
     
     if override_args is not None:
         overrides = vars(override_args)

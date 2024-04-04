@@ -35,7 +35,7 @@ def calculate_knn_prob(vals, distances, probability_dim, temperature, device, da
     N_num = K
     for i in D_dic.values():
         D_num += i
-
+    
     for i, item_tensor in enumerate(vals):
         for item2 in item_tensor:#一个tensor数组
             it = item2.tolist()
@@ -46,22 +46,26 @@ def calculate_knn_prob(vals, distances, probability_dim, temperature, device, da
                 psmall = cal_p(item, N_dic,N_num)
                 plarge = cal_p(item, D_dic,D_num)
                 if psmall >= plarge:
-                    CF = (psmall-plarge)/(1-plarge)
+                    CF = (psmall- plarge)/(1-plarge)
+                    #CF = (psmall)/(1-plarge)
                 else:
-                    CF = (psmall-plarge)/plarge
+                    CF = (psmall- plarge)/plarge
+                    #CF = (psmall)/plarge
                 
                 CF_total.append(CF)
     CF_total_tensor = torch.tensor(CF_total, dtype=torch.float, device=device)
     CF_total_tensor = CF_total_tensor.view(B, S, K)
-    
-    # construct prob(直接版)
-    # knn_probs = torch.zeros(B, S, probability_dim, device=device)
-    # knn_probs.scatter_add_(dim=-1, index=vals, src=CF_total_tensor)
 
     # # construct prob(vanilla版)
     # knn_weights = torch.softmax(scaled_dists, dim=-1)
     # knn_probs = torch.zeros(B, S, probability_dim, device=device)
     # knn_probs.scatter_add_(dim=-1, index=vals, src=knn_weights)
+    
+    # construct prob(直接版)
+    # knn_probs = torch.zeros(B, S, probability_dim, device=device)
+    # knn_probs.scatter_add_(dim=-1, index=vals, src=CF_total_tensor)
+
+    
 
     # # construct prob(softmax版)
     # knn_weights = torch.softmax(CF_total_tensor, dim=-1)
@@ -87,8 +91,8 @@ def calculate_knn_prob(vals, distances, probability_dim, temperature, device, da
     # knn_probs = torch.zeros(B, S, probability_dim, device=device)
     # knn_probs.scatter_add_(dim=-1, index=vals, src=knn_weights)
 
-    #construct prob(阈值版)
-    scaled_dists2 = scaled_dists -  0.8 * CF_total_tensor 
+    #construct prob(论文版)
+    scaled_dists2 =  1.5 * scaled_dists -  0.5* CF_total_tensor 
     knn_weights = torch.softmax(scaled_dists2, dim=-1)
     knn_probs = torch.zeros(B, S, probability_dim, device=device)
     knn_probs.scatter_add_(dim=-1, index=vals, src=knn_weights)

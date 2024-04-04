@@ -184,10 +184,10 @@ class VanillaKNNMTDecoder(TransformerDecoder):
                 vmax = self.k_parameters["vmax"]
                 #select_v = []
                 select = 0
-                segma = 0.5
+                segma = 0.4
                 Rev = False
-                nl = [3,5,7,8,9,11,6,10,13,15]
-                mytaglist =[3,5,7,8,9,11,13,15] #控制k的种类
+                nl = [3,5,6,7,8,9,10,11,13,15]
+                mytaglist =[3,5,7,9,11] #控制k的种类
                 for item in d1nn:
                     totaltest2+=1
                     it = item.item()
@@ -237,15 +237,16 @@ class VanillaKNNMTDecoder(TransformerDecoder):
                            # klist.append(item) 
                              klist1.append(item)  
                       
-                    klist2 = sorted(klist1)  
-                    klist += klist2##这里如果排序就是sequenced
+                    #klist2 = sorted(klist1)  
+                    klist += klist1##这里如果排序就是sequenced
 
                     
                 if len(klist) == 0:
                     selected_k = 8
                 
                 else:
-                    # #这里先对klist排了个序
+                    #这里先对klist排了个序
+                    # Rev = True
                     # klist_2 = sorted(klist,reverse=Rev)
                     # count = Counter(klist_2)
                     # selected_k = max(count.items(), key=lambda x: x[1])[0]
@@ -253,6 +254,7 @@ class VanillaKNNMTDecoder(TransformerDecoder):
                     count = Counter(klist)
                     selected_k = max(count.items(), key=lambda x: x[1])[0]
                     
+                    #随机
                     # count = Counter(klist)
                     # max_value = max(count.values())
                     # max_keys = [key for key, value in count.items() if value == max_value]
@@ -268,7 +270,17 @@ class VanillaKNNMTDecoder(TransformerDecoder):
                     # else:
                     #     selected = sorted_keys[len(sorted_keys) // 2]
                     # selected_k = int(selected)
-                    
+
+                    # #均值
+                    # count = Counter(klist)
+                    # max_value = max(count.values())
+                    # max_keys = [key for key, value in count.items() if value == max_value]
+                    # m_sum = 0 
+                    # for m in max_keys:
+                    #     m_sum+= m
+                    # selected_k = m_sum // len(max_keys)
+
+
                 self.retriever.retrieve(x2, return_list=["vals","distances"], k = selected_k)
                 #self.retriever.retrieve(x, return_list=["vals","distances"], k = selected_k)
                 q1.append( self.retriever.results["distances"])
@@ -283,8 +295,8 @@ class VanillaKNNMTDecoder(TransformerDecoder):
                 #                     string = "first:"+str(select)+" "
                 #                     file.write(string)
             #padding
-            target_size = 15
-            q1_padded = pad(q1,target_size,999.)#1e9)
+            target_size = max(mytaglist)
+            q1_padded = pad(q1,target_size,1e9)#999.)
             q2_padded = pad(q2,target_size,random.randint(0, 100))
             
 

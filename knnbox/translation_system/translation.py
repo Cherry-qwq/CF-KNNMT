@@ -57,13 +57,13 @@ if __name__ == "__main__":
 
     
     input_text = override_args.text
-    with open(os.path.join('/data/qirui/z-testdata','myapp.txt'), 'a') as file:
-                                    string = "first:"+str(input_text)+" "
-                                    file.write(string)
+    # with open(os.path.join('/data/qirui/z-testdata','myapp.txt'), 'a') as file:
+    #                                 string = "first:"+str(input_text)+" "
+    #                                 file.write(string)
 
     task = tasks.setup_task(args)
     model = task.build_model(args)
-    base_model = '/data/qirui/KNN-BOX-copy-copy/pretrain-models/wmt19.de-en/wmt19.de-en.ffn8192.pt'
+    base_model = args.path#'/data/qirui/KNN-BOX-copy-copy/pretrain-models/wmt19.de-en/wmt19.de-en.ffn8192.pt'
     if override_args is not None:
         overrides = vars(override_args)
         overrides.update(eval(getattr(override_args, "model_overrides", "{}")))
@@ -128,5 +128,5 @@ if __name__ == "__main__":
 
     translated_text = decode_fn(task.target_dictionary.string(output_ids))
     
-    print("[SPECIAL_OUTPUT]"+translated_text + "[SPECIAL_OUTPUT]")
+    print("[SPECIAL_OUTPUT]"+translated_text.replace('@@ ', '') + "[SPECIAL_OUTPUT]")
     

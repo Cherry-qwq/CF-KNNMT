@@ -217,7 +217,7 @@ def main(args, override_args=None):
     elif knn_type == "pck_knn_mt":
         datastore.dump() # dump the un-pruned datastore to disk
     # get_CF(args.knn_datastore_path)
-    # select_k(args.knn_datastore_path,dictionary_len)
+    select_k(args.knn_datastore_path,dictionary_len)
     # cal_dis(args.knn_datastore_path,dictionary_len)
 
     #在这个地方再遍历一次所有keys，确定每个keys的k的集合，加入进klist数组，然后选出最具代表性的k值保存进文件中

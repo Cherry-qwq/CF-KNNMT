@@ -62,7 +62,7 @@ def pjdir(x):
 def get_base_env(args):
     e = os.environ.copy()
     e["OMP_WAIT_POLICY"] = "PASSIVE"
-    e["CUDA_VISIBLE_DEVICES"] = "5"#str(args.single_gpu_index)
+    #e["CUDA_VISIBLE_DEVICES"] = "6"#str(args.single_gpu_index)
     return e
 
 def get_arch(m):
