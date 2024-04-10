@@ -92,7 +92,7 @@ def calculate_knn_prob(vals, distances, probability_dim, temperature, device, da
     # knn_probs.scatter_add_(dim=-1, index=vals, src=knn_weights)
 
     #construct prob(论文版)
-    scaled_dists2 =  1.5 * scaled_dists -  0.5* CF_total_tensor 
+    scaled_dists2 =  1.6 * scaled_dists -  0.6* CF_total_tensor 
     knn_weights = torch.softmax(scaled_dists2, dim=-1)
     knn_probs = torch.zeros(B, S, probability_dim, device=device)
     knn_probs.scatter_add_(dim=-1, index=vals, src=knn_weights)
@@ -119,16 +119,17 @@ def calculate_combined_prob(knn_prob, neural_model_logit, lambda_, log_probs):
     # with open(os.path.join('/data/qirui/z-testdata','calculate22.txt'), 'a') as file:
     #                                 string = "first:"+str(knn_prob.cpu().numpy())+" "
     #                                 file.write(string)
-
-
-
+    knn_prob = knn_prob.to(torch.float16)
+    neural_model_prob = neural_model_prob.to(torch.float16)
 
     combined_probs = knn_prob * lambda_ + neural_model_prob * (1 - lambda_)
+    
 
     # some extra infomation
     extra = {}
     extra["neural_probs"] = neural_model_prob
     extra["unlog_combined_probs"] = combined_probs
+
 
     if log_probs:
         combined_probs =  torch.log(combined_probs)

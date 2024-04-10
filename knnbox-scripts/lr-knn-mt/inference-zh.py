@@ -4,52 +4,33 @@ import subprocess
 import argparse
 import sys
 import re
-import numpy as np
 from datetime import datetime
-from comet import download_model, load_from_checkpoint
 PROJECT_PATH = os.path.sep.join(os.path.abspath(__file__).split(os.path.sep)[:-3])
-BASE_MODEL = f"{PROJECT_PATH}/pretrain-models/wmt19.de-en/wmt19.de-en.ffn8192.pt"
-ARCH_SUFFIX = "transformer_wmt19_de_en"
+BASE_MODEL = f"{PROJECT_PATH}/pretrain-models/wmt20.en-zh/en_zh_2.pt"
+ARCH_SUFFIX = "transformer_en_zh"
 
 DEFAULT_DATASTORE_PATH = {
     ("vanilla", "it") : f"{PROJECT_PATH}/datastore/vanilla/it",
     ("vanilla", "koran") : f"{PROJECT_PATH}/datastore/vanilla/koran",
     ("vanilla", "law") : f"{PROJECT_PATH}/datastore/vanilla/law",
     ("vanilla", "medical") : f"{PROJECT_PATH}/datastore/vanilla/medical",
-    ("adaptive", "it") : f"{PROJECT_PATH}/datastore/vanilla/it",
-    ("adaptive", "koran") : f"{PROJECT_PATH}/datastore/vanilla/koran",
-    ("adaptive", "law") : f"{PROJECT_PATH}/datastore/vanilla/law",
-    ("adaptive", "medical") : f"{PROJECT_PATH}/datastore/vanilla/medical",
-    ("pck", "it") : f"{PROJECT_PATH}/datastore/pck/it_dim64",
-    ("pck", "koran") : f"{PROJECT_PATH}/datastore/pck/koran_dim64",
-    ("pck", "law") : f"{PROJECT_PATH}/datastore/pck/law_dim64",
-    ("pck", "medical") : f"{PROJECT_PATH}/datastore/pck/medical_dim64",
-    ("lr", "it") : f"{PROJECT_PATH}/datastore/vanilla/it",
-    ("lr", "koran") : f"{PROJECT_PATH}/datastore/vanilla/koran",
-    ("lr", "law") : f"{PROJECT_PATH}/datastore/vanilla/law",
-    ("lr", "medical") : f"{PROJECT_PATH}/datastore/vanilla/medical",
-    ("lr_adaptive", "it") :  f"{PROJECT_PATH}/datastore/vanilla/it",
-    ("lr_adaptive", "koran") : f"{PROJECT_PATH}/datastore/vanilla/koran",
-    ("lr_adaptive", "law") : f"{PROJECT_PATH}/datastore/vanilla/law",
-    ("lr_adaptive", "medical") : f"{PROJECT_PATH}/datastore/vanilla/medical",
-    ("lr_pck", "it") :  f"{PROJECT_PATH}/datastore/pck/it_dim64",
-    ("lr_pck", "koran") : f"{PROJECT_PATH}/datastore/pck/koran_dim64",
-    ("lr_pck", "law") : f"{PROJECT_PATH}/datastore/pck/law_dim64",
-    ("lr_pck", "medical") : f"{PROJECT_PATH}/datastore/pck/medical_dim64"
+    ("vanilla", "en-zh") : f"{PROJECT_PATH}/datastore/vanilla/en-zh-2",
 }
 
 DEFAULT_KNN_TEMPERATURE = {
     "it" : 10,
     "law" : 10,
     "koran" : 100,
-    "medical" : 10   
+    "medical" : 10,
+    "en-zh" :10 
 }
 
 DEFAULT_KNN_LAMBDA = {
     "it" : 0.7,#0.7
     "medical" : 0.8,#0.8
     "law" : 0.8,
-    "koran" : 0.8
+    "koran" : 0.8,
+    "en-zh" :0.7 
 }
 
 def get_dataset_path(ds):
@@ -75,85 +56,13 @@ def get_arch(m):
     
 def add_common_arguments(parser : argparse.ArgumentParser):
     parser.add_argument("--model", required=True, choices=['base', 'vanilla', 'adaptive', 'pck', 'lr', 'lr_adaptive', 'lr_pck'])
-    parser.add_argument("--dataset", required=True, choices=['it', 'koran', 'law', 'medical'])
+    parser.add_argument("--dataset", required=True, choices=['it', 'koran', 'law', 'medical','en-zh'])
     parser.add_argument("--single-gpu-index", default=0)
     parser.add_argument("--run-3-time", default=False, action='store_true')
     parser.add_argument("--no-translation-loss", default=False, action='store_true')
     parser.add_argument("--test-knn-overhead", default=False, action='store_true')
     parser.add_argument("--knn-k", default=None)
 
-def extract_translations(output):
-    lines = output.strip().split('\n')
-    hypothesis_translations = {}
-    reference_translations = {}
-
-    for line in lines:
-        parts = line.split('\t')
-        if len(parts) >= 3:
-            idx, content = parts[0], parts[-1]
-            if idx.startswith('H-') or idx.startswith('D-'):
-                hypothesis_translations[idx[2:]] = content
-            elif idx.startswith('T-'):
-                reference_translations[idx[2:]] = content
-    
-    # 确保每个假设翻译都有一个对应的参考翻译
-    translations = [
-        (hypothesis_translations[idx], reference_translations[idx])
-        for idx in hypothesis_translations if idx in reference_translations
-    ]
-    
-    return translations
-import ast
-def calculate_comet_score(file_path):
-
-    with open(file_path, 'r') as file:
-        content = file.read()
-    lines = ast.literal_eval(content)
-# Initialize the lists
-    SList = []
-    DList = []
-    TList = []
-
-# Filter the lines
-    for line in lines:
-
-        if line.startswith('D-'):
-            DList.append(line.strip())
-        elif line.startswith('T-'):
-            TList.append(line.strip())
-        elif line.startswith('S-'):
-            SList.append(line.strip())
-
-    # with open(os.path.join(save_path,'D.txt'),'w') as fd:
-    #     fd.write(str(DList))
-    # with open(os.path.join(save_path,'T.txt'),'w') as fd:
-    #     fd.write(str(TList))    
-    # with open(os.path.join(save_path,'S.txt'),'w') as fd:
-    #     fd.write(str(SList))
-
-    # 打印或处理评估分数
-    # for score in scores:
-    #     print(score)
-    data = []
-
-# 遍历列表元素
-    for s, d, t in zip(SList, DList, TList):
-        # 从每个元素中提取所需信息
-        src = s.split('\t')[-1]  # 源句
-        mt = d.split('\t')[-1]  # 机器翻译输出
-        ref = t.split('\t')[-1]  # 参考翻译
-
-        # 创建字典并添加到结果列表
-        entry = {
-            "src": src,
-            "mt": mt,
-            "ref": ref
-        }
-        data.append(entry)
-
-
-
-    return data
 
 if __name__ == "__main__":
     ps = ArgumentParser()
@@ -165,13 +74,13 @@ if __name__ == "__main__":
             get_dataset_path(args.dataset),
             "--task", "translation",
             "--path", BASE_MODEL,
-            "--dataset-impl", "mmap",
+            "--dataset-impl", "raw",
             "--beam", "4",
             "--lenpen", "0.6",
             "--max-len-a", "1.2",
             "--max-len-b", "10",
-            "--source-lang", "de", 
-            "--target-lang", "en", 
+            "--source-lang", "en", 
+            "--target-lang", "zh", 
             "--gen-subset", "test",
             "--model-overrides", 
             "{'eval_bleu': False, 'required_seq_len_multiple':1, 'load_alignments': False}",
@@ -187,13 +96,13 @@ if __name__ == "__main__":
             get_dataset_path(args.dataset),
             "--task", "translation",
             "--path", BASE_MODEL,
-            "--dataset-impl", "mmap",
+            "--dataset-impl", "raw",
             "--beam", "4",
             "--lenpen", "0.6",
             "--max-len-a", "1.2",
             "--max-len-b", "10",
-            "--source-lang", "de", 
-            "--target-lang", "en", 
+            "--source-lang", "en", 
+            "--target-lang", "zh", 
             "--gen-subset", "test",
             "--max-tokens", "2048", 
             "--scoring", "sacrebleu", 
@@ -253,37 +162,6 @@ if __name__ == "__main__":
         #执行之前构建的 script 命令行指令。
         p = subprocess.Popen(script, env=get_base_env(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, err = p.communicate()
-
-        output_str = out.decode()
-        lines = output_str.split('\n')
-#####
-
-        # local_model_path = "/data/qirui/xlm-roberta-large"
-        # comet_model = load_from_checkpoint(local_model_path)
-        out_path = f"test_result/{args.dataset}.txt"
-        with open(out_path,"w" ) as file:
-            file.write(str(lines))
-        model_path = download_model("wmt20-comet-da")
-        comet_model = load_from_checkpoint(model_path)
-        # translations = extract_translations(output_str)
-        data = calculate_comet_score(out_path)
-        # scores = comet_model.predict(S,D,T)
-    #     data = [{
-    #     "src": "This is a test sentence.",
-    #     "mt": "这是一个测试句子。",
-    #     "ref": "这是一句测试句子。"
-    # }]
-        scores = comet_model.predict(samples = data)
-        comet_score = scores[1]
-        #print("Average COMET score:", comet_score)  # 输出每个翻译句子的质量分数
-        print("Average COMET score:", round(comet_score * 100, 2))
-        # # 打印评分结果
-        # for (hyp, ref), score in zip(translations, scores):
-        #     print(f"Hypothesis: {hyp}\nReference: {ref}\nCOMET Score: {score}\n")
-
-
-
-######
         p.wait()
         if p.returncode != 0:
             print(f"Error:\n {err.decode()}")
