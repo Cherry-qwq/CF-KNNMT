@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-from knnbox.combiner.utils import calculate_knn_prob, calculate_combined_prob
+from KNN-BOX-copy-copy.knnbox.combiner.utils2 import calculate_knn_prob, calculate_combined_prob
 
 class Combiner:
     r"""

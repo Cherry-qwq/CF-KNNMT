@@ -1,5 +1,5 @@
 from knnbox.combiner import Combiner
-from knnbox.combiner.utils import calculate_knn_prob_with_merge_weight
+from KNN-BOX-copy-copy.knnbox.combiner.utils2 import calculate_knn_prob_with_merge_weight
 
 class MergeWeightCombiner(Combiner):
     r""" 

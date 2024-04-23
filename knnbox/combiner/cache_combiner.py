@@ -5,7 +5,7 @@ Firstly used by greedy-merge knn-mt
 import torch
 import torch.nn.functional as F
 
-from knnbox.combiner.utils import (
+from KNN-BOX-copy-copy.knnbox.combiner.utils2 import (
     calculate_knn_prob,
     calculate_combined_prob,
     calculate_knn_prob_with_merge_weight

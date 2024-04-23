@@ -5,6 +5,7 @@ import argparse
 import sys
 import re
 from datetime import datetime
+from comet import download_model, load_from_checkpoint
 PROJECT_PATH = os.path.sep.join(os.path.abspath(__file__).split(os.path.sep)[:-3])
 BASE_MODEL = f"{PROJECT_PATH}/pretrain-models/wmt20.en-zh/en_zh_2.pt"
 ARCH_SUFFIX = "transformer_en_zh"
@@ -30,7 +31,7 @@ DEFAULT_KNN_LAMBDA = {
     "medical" : 0.8,#0.8
     "law" : 0.8,
     "koran" : 0.8,
-    "en-zh" :0.7 
+    "en-zh" :0
 }
 
 def get_dataset_path(ds):
@@ -45,7 +46,7 @@ def pjdir(x):
 def get_base_env(args):
     e = os.environ.copy()
     e["OMP_WAIT_POLICY"] = "PASSIVE"
-    #e["CUDA_VISIBLE_DEVICES"] = "6"#str(args.single_gpu_index)
+    e["CUDA_VISIBLE_DEVICES"] = "0"#str(args.single_gpu_index)
     return e
 
 def get_arch(m):
@@ -63,6 +64,58 @@ def add_common_arguments(parser : argparse.ArgumentParser):
     parser.add_argument("--test-knn-overhead", default=False, action='store_true')
     parser.add_argument("--knn-k", default=None)
 
+def calculate_comet_score(file_path):
+
+    with open(file_path, 'r') as file:
+        content = file.read()
+    lines = ast.literal_eval(content)
+# Initialize the lists
+    SList = []
+    DList = []
+    TList = []
+
+# Filter the lines
+    for line in lines:
+
+        if line.startswith('D-'):
+            DList.append(line.strip())
+        elif line.startswith('T-'):
+            TList.append(line.strip())
+        elif line.startswith('S-'):
+            SList.append(line.strip())
+
+    # with open(os.path.join(save_path,'D.txt'),'w') as fd:
+    #     fd.write(str(DList))
+    # with open(os.path.join(save_path,'T.txt'),'w') as fd:
+    #     fd.write(str(TList))    
+    # with open(os.path.join(save_path,'S.txt'),'w') as fd:
+    #     fd.write(str(SList))
+
+    # 打印或处理评估分数
+    # for score in scores:
+    #     print(score)
+    data = []
+
+# 遍历列表元素
+    for s, d, t in zip(SList, DList, TList):
+        # 从每个元素中提取所需信息
+        src = s.split('\t')[-1]  # 源句
+        mt = d.split('\t')[-1]  # 机器翻译输出
+        ref = t.split('\t')[-1]  # 参考翻译
+        with open(os.path.join("/data/qirui/z-testdata",'vanillamodel_koran.txt'),'a') as fd:
+            fd.write(str(mt)+"\n")
+        # 创建字典并添加到结果列表
+        entry = {
+            "src": src,
+            "mt": mt,
+            "ref": ref
+        }
+        data.append(entry)
+
+
+
+    return data
+
 
 if __name__ == "__main__":
     ps = ArgumentParser()
@@ -77,8 +130,10 @@ if __name__ == "__main__":
             "--dataset-impl", "raw",
             "--beam", "4",
             "--lenpen", "0.6",
-            "--max-len-a", "1.2",
-            "--max-len-b", "10",
+            # "--max-len-a", "200",
+            # "--max-len-b", "200",
+            #"--max-len-a", "1.2",
+            #"--max-len-b", "10",
             "--source-lang", "en", 
             "--target-lang", "zh", 
             "--gen-subset", "test",
@@ -162,6 +217,40 @@ if __name__ == "__main__":
         #执行之前构建的 script 命令行指令。
         p = subprocess.Popen(script, env=get_base_env(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, err = p.communicate()
+
+        output_str = out.decode()
+        lines = output_str.split('\n')
+
+        out_path = f"test_result/{args.dataset}.txt"
+        with open(out_path,"w" ) as file:
+            file.write(str(lines))
+#  #####
+
+#          # local_model_path = "/data/qirui/xlm-roberta-large"
+#          # comet_model = load_from_checkpoint(local_model_path)
+#         out_path = f"test_result/{args.dataset}.txt"
+#         with open(out_path,"w" ) as file:
+#             file.write(str(lines))
+#         model_path = download_model("wmt20-comet-da")
+#         comet_model = load_from_checkpoint(model_path)
+#         # translations = extract_translations(output_str)
+#         data = calculate_comet_score(out_path)
+#         # scores = comet_model.predict(S,D,T)
+#     #     data = [{
+#     #     "src": "This is a test sentence.",
+#     #     "mt": "这是一个测试句子。",
+#     #     "ref": "这是一句测试句子。"
+#     # }]
+#         scores = comet_model.predict(samples = data)
+#         comet_score = scores[1]
+#         #print("Average COMET score:", comet_score)  # 输出每个翻译句子的质量分数
+#         print("Average COMET score:", round(comet_score * 100, 2))
+#         # # 打印评分结果
+#         # for (hyp, ref), score in zip(translations, scores):
+#         #     print(f"Hypothesis: {hyp}\nReference: {ref}\nCOMET Score: {score}\n")
+
+
+
         p.wait()
         if p.returncode != 0:
             print(f"Error:\n {err.decode()}")

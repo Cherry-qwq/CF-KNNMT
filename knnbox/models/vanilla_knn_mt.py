@@ -6,11 +6,15 @@ from fairseq.models.transformer import (
     TransformerEncoder,
     TransformerDecoder,
 )
+import os
+import math
+import random
+import torch.nn.functional as F
 from fairseq.models import (
     register_model,
     register_model_architecture,
 )
-
+from collections import Counter
 from knnbox.common_utils import global_vars, select_keys_with_pad_mask, archs
 from knnbox.datastore import Datastore
 from knnbox.retriever import Retriever
@@ -19,7 +23,7 @@ from knnbox.combiner import Combiner
 ### Added for measuring KNN time
 from fairseq.logging.meters import StopwatchMeter
 import torch
-
+import json
 def record_timer_start(t : StopwatchMeter):
     torch.cuda.synchronize()  # Synchronize to ensure precision.
     t.start()
@@ -99,6 +103,16 @@ class VanillaKNNMTDecoder(TransformerDecoder):
                      temperature=args.knn_temperature, probability_dim=len(dictionary),datastore_path=args.knn_datastore_path)
             
             self.retrieve_timer = StopwatchMeter()
+            self.select_data = {}
+            self.k_parameters = {}
+            # with open(os.path.join(self.args.knn_datastore_path,"select_k.json"), 'r') as f1:
+            #     self.select_data = json.load(f1)
+            # with open(os.path.join(self.args.knn_datastore_path,"select_k_2.json"), 'r') as f3:
+            #     self.select_data_2 = json.load(f3)
+            with open(os.path.join(self.args.knn_datastore_path,"select_k_for_all_3.json"), 'r') as f4:
+                self.select_data_3 = json.load(f4)
+            with open(os.path.join(self.args.knn_datastore_path,"parameters.json"), 'r') as f2:
+                self.k_parameters = json.load(f2)
 
     def forward(
         self,
@@ -139,7 +153,193 @@ class VanillaKNNMTDecoder(TransformerDecoder):
             ## save retrieved `vals` and `distances`
             #record_timer_start(self.retrieve_timer)
             #检索器返回最近的几个点的val和distance
-            self.retriever.retrieve(x, return_list=["vals", "distances"])
+            ###这里先对xretrive一次，返回keys和values；然后遍历所有的keys，每个keyi遍历一遍k值，进行retrive(keyi,k),返回values和distances，利用combiner计算一下结果，如果结果正确那么把k扔进klist里面。最后统计一下klist里面最大数量的值，作为真正的key值，进行下面的步骤。
+            q1 = []
+            q2 = []
+            totaltest1=0
+            totaltest2=0
+            # with open(os.path.join('/data/qirui/z-testdata','example77.txt'), 'a') as file:
+            #                     string = "first:"+ str(x.size())+str(x.cpu().numpy())+ " "
+            #                     file.write(string)
+            for it in x:
+                totaltest1 += 1
+                # with open(os.path.join('/data/qirui/z-testdata','example3.txt'), 'a') as file:
+                #                 string = "first:"+ str(it.size())+str(it.cpu().numpy())+ " "
+                #                 file.write(string)
+
+                x2 = torch.unsqueeze(it,dim = 0)#[1,1,1024]
+                self.retriever.retrieve(x2, return_list=["distances","indices"] ,k = 1)
+                d1nn = self.retriever.results["distances"]
+                
+                
+                # with open(os.path.join('/data/qirui/z-testdata','example2_3.txt'), 'a') as file:
+                #     string = "first:"+ str(d1nn.size())+ "\n"
+                #     file.write(string)
+                
+                
+                #d1nn = self.retriever.results["distances"][:, 0]
+                d1nn = d1nn.cpu().view(-1).numpy()
+                dmin = self.k_parameters["dmin"]
+                dmax = self.k_parameters["dmax"]
+                vmax = self.k_parameters["vmax"]
+                #select_v = []
+                select = 0
+                segma = 0.25                                                                              
+                Rev = False
+                nl = [3,5,6,7,8,9,10,11,13,15]
+                mytaglist =[3,5,7,9,11] #控制k的种类
+                for item in d1nn:
+                    totaltest2+=1
+                    it = item.item()
+                    # with open(os.path.join('/data/qirui/z-testdata','exampledd.txt'), 'a') as file:
+                    #     string =  str(it)+ "\n"
+                    #     file.write(string)
+                    if it < dmin:
+                        #select_v.append(8)
+                        select = math.ceil(vmax / segma)#
+                    elif it > dmax:
+                        #select_v.append(1)
+                        select = 1#改的不是这个！
+                    else:
+                        beta = -math.log(vmax)/(dmax-dmin)
+                        vlin = (1-vmax)/(dmax-dmin)*(it-dmin)+vmax
+                        vexp = vmax * math.exp((it-dmin)*beta)
+                        vyi = math.ceil(((vlin * vexp) ** 0.5)/ segma)
+                        #vyi = math.ceil(((vlin + vexp) * 0.5)/ segma)
+                        #vyi = math.ceil((2 / (1 / vlin + 1 / vexp) )/ segma)
+                        ###
+                        # if vyi > 8 :
+                        #     vyi = 8
+                        select = vyi
+                
+                self.retriever.retrieve(x2, return_list=["indices"] ,k = select)
+                index2 = self.retriever.results["indices"]#(batch_size,select)
+                #index2表示这个向量的select个邻居
+                klist = []
+                selected_k = 0
+                index = index2.cpu()  # 将 tensor 移动到 CPU
+                index = index.view(-1)#这里把向量的序号都展开了，batchsize！=1的时候注意一下
+                for idx in index:
+                    idx_str = str(idx.item())#这里的idx.item()是一个单独的key对应的序号
+                    #print(index)
+                    #idx = idx.cpu()########
+                    klist1 = []
+                    # for item in self.select_data[idx_str]:
+                    #     if item in mytaglist:  #####
+                    #        # klist.append(item) 
+                    #          klist1.append(item) 
+                    # for item in self.select_data_2[idx_str]:
+                    #     if item in mytaglist:  #####
+                    #         klist1.append(item) 
+                    #         #klist.append(item)    
+                    for item in self.select_data_3[idx_str]:
+                        if item in mytaglist:  #####
+                           # klist.append(item) 
+                             klist1.append(item)  
+                      
+                    #klist2 = sorted(klist1)  
+                    klist += klist1##这里如果排序就是sequenced
+
+                    
+                if len(klist) == 0:
+                    selected_k = 8
+                
+                else:
+                    #这里先对klist排了个序
+                    # Rev = True
+                    # klist_2 = sorted(klist,reverse=Rev)
+                    # count = Counter(klist_2)
+                    # selected_k = max(count.items(), key=lambda x: x[1])[0]
+                    
+                    count = Counter(klist)
+                    selected_k = max(count.items(), key=lambda x: x[1])[0]
+                    
+                    #随机
+                    # count = Counter(klist)
+                    # max_value = max(count.values())
+                    # max_keys = [key for key, value in count.items() if value == max_value]
+                    # selected_k = random.choice(max_keys)
+
+                    # #取中位数
+                    # count = Counter(klist)
+                    # max_value = max(count.values())
+                    # max_keys = [key for key, value in count.items() if value == max_value]
+                    # sorted_keys = sorted(max_keys)
+                    # if len(sorted_keys) % 2 == 0:
+                    #     selected = (sorted_keys[len(sorted_keys) // 2 - 1] + sorted_keys[len(sorted_keys) // 2]) / 2
+                    # else:
+                    #     selected = sorted_keys[len(sorted_keys) // 2]
+                    # selected_k = int(selected)
+
+                    # #均值
+                    # count = Counter(klist)
+                    # max_value = max(count.values())
+                    # max_keys = [key for key, value in count.items() if value == max_value]
+                    # m_sum = 0 
+                    # for m in max_keys:
+                    #     m_sum+= m
+                    # selected_k = m_sum // len(max_keys)
+
+
+                self.retriever.retrieve(x2, return_list=["vals","distances"], k = selected_k)
+                #self.retriever.retrieve(x, return_list=["vals","distances"], k = selected_k)
+                q1.append( self.retriever.results["distances"])
+                q2.append(self.retriever.results["vals"])
+                # with open(os.path.join('/data/qirui/z-testdata','example55_middle.txt'), 'a') as file:
+                #                     string = "first:"+str(selected_k)+"\n"
+                #                     file.write(string)
+                # with open(os.path.join('/data/qirui/z-testdata','example66_normal.txt'), 'a') as file:
+                #                     string = str(count)+"\n"
+                #                     file.write(string)
+                # with open(os.path.join('/data/qirui/z-testdata','example_.txt'), 'a') as file:
+                #                     string = "first:"+str(select)+" "
+                #                     file.write(string)
+            #padding
+            target_size = max(mytaglist)
+            q1_padded = pad(q1,target_size,1e9)#999.)
+            q2_padded = pad(q2,target_size,random.randint(0, 100))
+            
+
+            squeezed_tensors_q1 = [torch.squeeze(tensor,dim = 0) for tensor in q1_padded]
+            squeezed_tensors_q2 = [torch.squeeze(tensor,dim = 0) for tensor in q2_padded]
+            
+            self.retriever.results["distances"] = torch.cat(squeezed_tensors_q1, dim=0).unsqueeze(1)#.unsqueeze(-1)
+            self.retriever.results["vals"]=torch.cat(squeezed_tensors_q2, dim=0).unsqueeze(1)#.unsqueeze(-1)
+            # with open(os.path.join('/data/qirui/z-testdata','example4.txt'), 'a') as file:
+            #                         string = "first:"+str(self.retriever.results["distances"].size())+" "
+            #                         file.write(string)
+            # with open(os.path.join('/data/qirui/z-testdata','example2_3.txt'), 'a') as file:
+            #         string = f"first:torch.Size([{totaltest1}, 1])"+"\n"
+            #         file.write(string)    
+            # with open(os.path.join('/data/qirui/z-testdata','example2_4.txt'), 'a') as file:
+            #         string = f"first:torch.Size([{totaltest2}, 1])"+"\n"
+            #         file.write(string)    
+                
+   
+            #方法二原始版本
+            # index = index2.cpu()  # 将 tensor 移动到 CPU
+            # index = index.view(-1)
+            # for idx in index:
+            #     idx_str = str(idx.item())#这里的idx.item()是一个单独的key对应的序号
+            #     #print(index)
+            #     #idx = idx.cpu()########
+            #     for item in self.select_data[idx_str]:  
+            #         klist.append(item)
+            #     # for item in self.select_data[idx]:
+            #     #      klist.append(item)
+            # if len(klist) == 0:
+            #     selected_k = 8
+            # else:
+            #     count = Counter(klist)
+            #     selected_k = max(count.items(), key=lambda x: x[1])[0]
+            # self.retriever.retrieve(x, return_list=["vals","distances"], k = selected_k)
+            # #self.retriever.retrieve(x, return_list=["vals","distances"], k = 9)
+
+
+
+
+
+
             #record_timer_end(self.retrieve_timer)
         
         if not features_only:#？
@@ -153,7 +353,7 @@ class VanillaKNNMTDecoder(TransformerDecoder):
         log_probs: bool,
         sample: Optional[Dict[str, Tensor]] = None,
     ):
-        r"""
+        r""" 
         we overwrite this function to change the probability calculation process.
         step 1. 
             calculate the knn probability based on retrieve resultes
@@ -175,7 +375,18 @@ class VanillaKNNMTDecoder(TransformerDecoder):
             print("KNN overhead time is not recoreded")
         else:
             print(f"KNN overhead time = {self.retrieve_timer.sum}s")
-
+def pad(q,target_size,num):
+        q_padded = []
+        for tensor in q:
+            # 当前张量的最后一个维度长度
+            current_size = tensor.size(-1)
+            padding_size = target_size - current_size
+            if padding_size > 0:
+                pad_tensor = F.pad(tensor, (0, padding_size), "constant", num)#0)
+            else:
+                pad_tensor = tensor
+            q_padded.append(pad_tensor)
+        return q_padded
 
 r""" Define some vanilla knn-mt's arch.
      arch name format is: knn_mt_type@base_model_arch
@@ -221,6 +432,5 @@ def transformer_zh_en(args):
 @register_model_architecture("vanilla_knn_mt", "vanilla_knn_mt@transformer_en_zh")
 def transformer_zh_en(args):
     archs.transformer_en_zh(args)
-        
         
 

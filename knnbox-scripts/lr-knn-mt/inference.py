@@ -142,7 +142,8 @@ def calculate_comet_score(file_path):
         src = s.split('\t')[-1]  # 源句
         mt = d.split('\t')[-1]  # 机器翻译输出
         ref = t.split('\t')[-1]  # 参考翻译
-
+        with open(os.path.join("/data/qirui/z-testdata",'vanillamodel_koran.txt'),'a') as fd:
+            fd.write(str(mt)+"\n")
         # 创建字典并添加到结果列表
         entry = {
             "src": src,
@@ -256,7 +257,7 @@ if __name__ == "__main__":
 
         output_str = out.decode()
         lines = output_str.split('\n')
-#####
+# #####
 
         # local_model_path = "/data/qirui/xlm-roberta-large"
         # comet_model = load_from_checkpoint(local_model_path)
@@ -267,7 +268,7 @@ if __name__ == "__main__":
         comet_model = load_from_checkpoint(model_path)
         # translations = extract_translations(output_str)
         data = calculate_comet_score(out_path)
-        # scores = comet_model.predict(S,D,T)
+        #scores = comet_model.predict(S,D,T)
     #     data = [{
     #     "src": "This is a test sentence.",
     #     "mt": "这是一个测试句子。",
@@ -283,7 +284,7 @@ if __name__ == "__main__":
 
 
 
-######
+# ######
         p.wait()
         if p.returncode != 0:
             print(f"Error:\n {err.decode()}")

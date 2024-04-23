@@ -1,0 +1,2 @@
+Translated 3002 sentences (36664 tokens) in 11.2s (267.83 sentences/s, 3271.01 tokens/s)
+beam=4: BLEU = 0.00 0.0/0.0/0.0/0.0 (BP = 1.000 ratio = 1.301 hyp_len = 10280 ref_len = 7903)

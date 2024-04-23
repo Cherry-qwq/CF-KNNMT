@@ -228,9 +228,13 @@ def _main(args, override_args, output_file):
 
             target_tokens = None
             if has_target:#如果这句话有标准答案，就对其进行处理，去掉pad
+                #print("Original target sentence:", sample["target"][i]) 
                 target_tokens = (
                     utils.strip_pad(sample["target"][i, :], tgt_dict.pad()).int().cpu()
                 )
+                
+            
+            
 
             # Either retrieve the original sentences or regenerate them from tokens.
             #取得目标语言的原始文本，或者通过词典把目标tokens转化成目标句子
@@ -257,6 +261,7 @@ def _main(args, override_args, output_file):
             src_str = decode_fn(src_str)
             if has_target:
                 target_str = decode_fn(target_str)
+                #print("target_str",target_str)
             #输出源语句和目标语句
             if not args.quiet:
                 if src_dict is not None:
@@ -346,6 +351,7 @@ def _main(args, override_args, output_file):
                         target_tokens = tgt_dict.encode_line(
                             target_str, add_if_not_exist=True
                         )
+                        #print("target_tokens",target_tokens)
                         hypo_tokens = tgt_dict.encode_line(
                             detok_hypo_str, add_if_not_exist=True
                         )

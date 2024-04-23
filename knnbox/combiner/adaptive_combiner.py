@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import math
 import os
 from knnbox.common_utils import read_config, write_config
-from knnbox.combiner.utils import calculate_combined_prob, calculate_knn_prob
+from KNN-BOX-copy-copy.knnbox.combiner.utils2 import calculate_combined_prob, calculate_knn_prob
 
 
 class AdaptiveCombiner(nn.Module):
