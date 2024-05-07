@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>机器翻译系统</title>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <script src="static/js/jquery-3.6.3.min.js"></script>
+    <script src="static/js/semantic.js"></script>
+    <link rel="stylesheet" type="text/css" href="static/css/semantic.css">
+    <style>
+        .container {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px 0;
+        }
+        .text-box, .result-box {
+            flex: 1;
+            margin-right: 10px;
+        }
+        .result-box {
+            background-color: #f2f2f2;
+            padding: 20px;
+            height: auto;
+            overflow-y: auto;
+            margin-right: 0;
+        }
+        .ui.form textarea {
+            min-height: 200px;
+        }
+        .button-container {
+            display: flex;
+            justify-content: center;
+            gap: 10px; /* 按钮之间的间距 */
+        }
+    </style>
+    <style>
+        .button-container {
+            display: flex;
+            justify-content: center;
+            gap: 10px; /* 按钮之间的间距 */
+        }
+    </style>
+</head>
+<body>
+    <div class="ui container">
+        <h1 class="ui header" style="text-align: center;">机器翻译系统</h1>
+        <div class="ui form">
+            <div class="two fields">
+                <div class="field">
+                    <label>源语言:</label>
+                    <select id="sourceLanguage" class="ui dropdown">
+                        <option value="zh">中文</option>
+                        <option value="en">英文</option>
+                        <option value="de">德文</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>目标语言:</label>
+                    <select id="targetLanguage" class="ui dropdown">
+                        <option value="zh">中文</option>
+                        <option value="en">英文</option>
+                        <option value="de">德文</option>
+                    </select>
+                </div>
+            </div>
+            <div class="container">
+                <div class="text-box">
+                    <textarea id="textToTranslate"></textarea>
+                </div>
+                <div class="result-box" id="translationResult">
+                    <!-- 翻译结果将在这里显示 -->
+                </div>
+            </div>
+            <div class="button-container">
+                <button class="ui primary button" onclick="translateText()">翻译</button>
+                <button class="ui button" onclick="copyToClipboard()">复制到剪贴板</button>
+                <button class="ui button" onclick="downloadAsFile()">下载为文件</button>
+            </div>
+            
+            <div class="field">
+                <label>或上传文件进行翻译:</label>
+                <input type="file" id="fileInput" accept=".txt">
+            </div>
+            <button class="ui primary button" onclick="translateFile()">上传并翻译</button>
+        </div>
+    </div>
+
+    <script>
+        function translateText() {
+            var text = document.getElementById('textToTranslate').value;
+            var sourceLang = document.getElementById('sourceLanguage').value;
+            var targetLang = document.getElementById('targetLanguage').value;
+
+            document.getElementById('translationResult').innerText = '正在翻译...';
+
+            fetch('/translate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'text=' + encodeURIComponent(text) + '&sourceLang=' + sourceLang + '&targetLang=' + targetLang
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('translationResult').innerText = data.translatedText;
+            })
+            .catch(error => {
+        console.error('Error:', error);
+        // 显示错误消息
+        document.getElementById('translationResult').innerText = '翻译失败，请稍后再试。';
+    });
+        }
+        function translateFile() {
+    var fileInput = document.getElementById('fileInput');
+    var sourceLang = document.getElementById('sourceLanguage').value;
+    var targetLang = document.getElementById('targetLanguage').value;
+
+    if (fileInput.files.length > 0) {
+        var file = fileInput.files[0];
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            var text = e.target.result;
+
+            document.getElementById('translationResult').innerText = '正在翻译...';
+
+            fetch('/translate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'text=' + encodeURIComponent(text) + '&sourceLang=' + sourceLang + '&targetLang=' + targetLang
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('translationResult').innerText = data.translatedText;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('translationResult').innerText = '翻译失败，请稍后再试。';
+            });
+        };
+        reader.readAsText(file);
+    }
+}
+
+
+        function copyToClipboard() {
+            var text = document.getElementById('translationResult').innerText;
+            navigator.clipboard.writeText(text).then(function() {
+                alert('翻译结果已复制到剪贴板');
+            }, function(err) {
+                alert('复制失败');
+            });
+        }
+
+        function downloadAsFile() {
+            var text = document.getElementById('translationResult').innerText;
+            var blob = new Blob([text], {type: 'text/plain'});
+            var url = window.URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'translated.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+        $(document).ready(function() {
+            $('select.dropdown').dropdown();
+        });
+    </script>
+</body>
+</html>
